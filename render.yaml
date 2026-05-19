@@ -1,0 +1,43 @@
+# Render Blueprint for the gamify-engage backend.
+# Pins build/start so Render never autodetects and runs `node src/server.ts`
+# (Node can't execute TS; the extensionless ESM imports then fail with
+# ERR_MODULE_NOT_FOUND). Build compiles TS -> dist/, start runs compiled JS.
+#
+# If the Blueprint is connected with the repo root as the base, set
+# `rootDir: my-game-platform-backend`. If it is connected with THIS folder
+# as the base, leave rootDir unset (default ".").
+services:
+  - type: web
+    name: gamify-engage-backend
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DB_SSL
+        value: "true"
+      # Secrets / connection details — set these in the Render dashboard.
+      - key: JWT_ACCESS_SECRET
+        sync: false
+      - key: JWT_REFRESH_SECRET
+        sync: false
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_NAME
+        sync: false
+      # Optional integration / app config.
+      - key: CORS_ORIGINS
+        sync: false
+      - key: HAMARA_ENGAGE_BACKEND
+        sync: false
+      - key: SERVICE_SHARED_KEY
+        sync: false
