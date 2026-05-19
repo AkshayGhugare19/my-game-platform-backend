@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
+import dotenv from "dotenv";
 import morgan from "morgan";
 import swaggerUi from "swagger-ui-express";
 
@@ -25,22 +26,21 @@ import {
   achievementsRouter,
   auditRouter,
 } from "./route/misc.routes";
+import { initAssociations } from "./config/associations";
+
+dotenv.config();
 
 const app = express();
 
 // ─── Security & utils ──────────────────────────────────────────────
 app.use(helmet());
-// If CORS_ORIGINS is set, use it as an allow-list; otherwise reflect the
-// request origin (allows any site, still compatible with credentials).
-app.use(
-  cors({
-    origin: env.corsOrigins.length > 0 ? env.corsOrigins : true,
-    credentials: true,
-  })
-);
-app.use(morgan(env.isProd ? "combined" : "dev"));
-app.use(express.json({ limit: "1mb" }));
+app.use(cors());
+app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
+app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+initAssociations();
+
 
 // ─── Health ────────────────────────────────────────────────────────
 app.get("/api/health", (_req, res) =>
