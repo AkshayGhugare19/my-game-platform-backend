@@ -1,5 +1,5 @@
-import { Response } from "express";
-import { AuthRequest } from "../../../types/request.type.ts";
+import type { Response } from "express";
+import type { AuthRequest } from "../../../types/request.type.ts";
 import { successResponse, errorResponse } from "../../../utils/responseHandler.ts";
 import { AppError } from "../../../utils/AppError.ts";
 import { getProfile, getXpHistory } from "../service/profile.service.ts";

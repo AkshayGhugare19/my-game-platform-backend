@@ -1,9 +1,9 @@
 import { Router } from "express";
-import { Request, Response } from "express";
+import type { Request, Response } from "express";
 import { successResponse, errorResponse } from "../utils/responseHandler.ts";
 import { auth } from "../middlewares/auth.middleware.ts";
 import { role } from "../middlewares/role.middleware.ts";
-import { AuthRequest } from "../types/request.type.ts";
+import type { AuthRequest } from "../types/request.type.ts";
 import AchievementRepository from "../modules/achievement/model/achievement.repository.ts";
 import UserAchievementRepository from "../modules/achievement/model/user-achievement.repository.ts";
 import AuditLogRepository from "../modules/audit/model/audit-log.repository.ts";

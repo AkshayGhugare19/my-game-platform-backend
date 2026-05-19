@@ -1,4 +1,4 @@
-import { Request, Response } from "express";
+import type { Request, Response } from "express";
 import { successResponse, errorResponse } from "../../../utils/responseHandler.ts";
 import { AppError } from "../../../utils/AppError.ts";
 import LevelTierRepository from "../../level/model/level-tier.repository.ts";

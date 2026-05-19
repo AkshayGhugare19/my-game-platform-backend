@@ -1,5 +1,6 @@
-import { Server as HttpServer } from "http";
-import { Server, Socket } from "socket.io";
+import type { Server as HttpServer } from "http";
+import type { Socket } from "socket.io";
+import { Server } from "socket.io";
 import env from "../config/env.ts";
 import { verifyAccessToken } from "../utils/tokens.ts";
 import { logger } from "../utils/logger.ts";

@@ -4,7 +4,7 @@ import { bus } from "../../../events/eventBus.ts";
 import { EVENTS } from "../../../events/events.ts";
 import MissionRepository from "../model/mission.repository.ts";
 import UserMissionRepository from "../model/user-mission.repository.ts";
-import { Mission, MissionMetric } from "../model/mission.model.ts";
+import type { Mission, MissionMetric } from "../model/mission.model.ts";
 import RankTierRepository from "../../rank/model/rank-tier.repository.ts";
 import { awardXp } from "../../xp/service/xp.engine.ts";
 import { grantReward } from "../../reward/service/reward.engine.ts";

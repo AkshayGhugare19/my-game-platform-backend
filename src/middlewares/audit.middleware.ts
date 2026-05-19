@@ -1,5 +1,5 @@
-import { Response, NextFunction } from "express";
-import { AuthRequest } from "../types/request.type.ts";
+import type { Response, NextFunction } from "express";
+import type { AuthRequest } from "../types/request.type.ts";
 import { recordAudit } from "../modules/audit/service/audit.service.ts";
 
 /**

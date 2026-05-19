@@ -1,5 +1,5 @@
 import rateLimit from "express-rate-limit";
-import { AuthRequest } from "../types/request.type.ts";
+import type { AuthRequest } from "../types/request.type.ts";
 
 /**
  * In-memory limiter (single-instance). Keyed by authenticated user when

@@ -1,5 +1,5 @@
-import { Response, NextFunction } from "express";
-import { AuthRequest } from "../types/request.type.ts";
+import type { Response, NextFunction } from "express";
+import type { AuthRequest } from "../types/request.type.ts";
 import { verifyAccessToken } from "../utils/tokens.ts";
 
 export const auth = (

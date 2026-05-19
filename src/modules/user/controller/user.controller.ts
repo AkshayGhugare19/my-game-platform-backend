@@ -1,4 +1,4 @@
-import { Request, Response } from "express";
+import type { Request, Response } from "express";
 import { Op } from "sequelize";
 import { successResponse, errorResponse } from "../../../utils/responseHandler.ts";
 import UserRepository from "../model/user.repository.ts";

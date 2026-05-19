@@ -1,5 +1,5 @@
-import { Response } from "express";
-import { AuthRequest } from "../../../types/request.type.ts";
+import type { Response } from "express";
+import type { AuthRequest } from "../../../types/request.type.ts";
 import { successResponse, errorResponse } from "../../../utils/responseHandler.ts";
 import { getBoard, myPositions } from "../service/leaderboard.service.ts";
 

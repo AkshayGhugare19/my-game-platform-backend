@@ -1,9 +1,10 @@
-import {
-  DataTypes,
-  Model,
+import type {
   InferAttributes,
   InferCreationAttributes,
-  CreationOptional,
+  CreationOptional} from "sequelize";
+import {
+  DataTypes,
+  Model
 } from "sequelize";
 import sequelize from "../../../config/db.ts";
 

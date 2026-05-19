@@ -1,6 +1,5 @@
 import { bus } from "./eventBus.ts";
-import {
-  EVENTS,
+import type {
   UserRegisteredPayload,
   XpAwardedPayload,
   ActivityRecordedPayload,
@@ -9,14 +8,16 @@ import {
   RankUpPayload,
   MissionCompletedPayload,
   MissionProgressPayload,
-  RewardGrantedPayload,
+  RewardGrantedPayload} from "./events.ts";
+import {
+  EVENTS
 } from "./events.ts";
 import { pushNotification } from "../modules/notification/service/notification.service.ts";
 import { broadcastTop } from "../modules/leaderboard/service/leaderboard.service.ts";
 import { progressMissions } from "../modules/mission/service/mission.engine.ts";
 import { unlockByRank } from "../modules/reward/service/reward.engine.ts";
 import { emitToUser } from "../realtime/socket.ts";
-import { MissionMetric } from "../modules/mission/model/mission.model.ts";
+import type { MissionMetric } from "../modules/mission/model/mission.model.ts";
 
 /** Maps an activity type → the mission metric it advances. */
 const METRIC_BY_TYPE: Record<string, MissionMetric> = {

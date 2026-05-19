@@ -3,9 +3,10 @@ import { EVENTS } from "../../../events/events.ts";
 import ActivityLogRepository from "../model/activity-log.repository.ts";
 import { awardXp } from "../../xp/service/xp.engine.ts";
 import UserRepository from "../../user/model/user.repository.ts";
+import type {
+  HamaraAddXpPointUserResponse} from "../../../utils/hamaraEngageService.ts";
 import {
-  hamaraAddXpPoints,
-  HamaraAddXpPointUserResponse,
+  hamaraAddXpPoints
 } from "../../../utils/hamaraEngageService.ts";
 
 export interface RecordActivityInput {

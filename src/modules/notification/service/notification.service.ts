@@ -1,5 +1,5 @@
 import NotificationRepository from "../model/notification.repository.ts";
-import { NotificationType } from "../model/notification.model.ts";
+import type { NotificationType } from "../model/notification.model.ts";
 import { emitToUser } from "../../../realtime/socket.ts";
 import { logger } from "../../../utils/logger.ts";
 

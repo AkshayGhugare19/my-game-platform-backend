@@ -1,4 +1,4 @@
-import { Request, Response } from "express";
+import type { Request, Response } from "express";
 import {
   registerService,
   loginService,
@@ -9,7 +9,7 @@ import {
 import UserRepository from "../../user/model/user.repository.ts";
 import { successResponse, errorResponse } from "../../../utils/responseHandler.ts";
 import { AppError } from "../../../utils/AppError.ts";
-import { AuthRequest } from "../../../types/request.type.ts";
+import type { AuthRequest } from "../../../types/request.type.ts";
 
 const meta = (req: Request) => ({
   ip: req.ip,
