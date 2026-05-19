@@ -18,6 +18,63 @@ export interface HamaraEngageResult<T = unknown> {
   error?: string;
 }
 
+/** `gamification.progress` — the player's current level snapshot. */
+export interface HamaraGamificationProgress {
+  level?: number;
+  rank_name?: string;
+  xp_points?: number;
+  xp_to_next?: number;
+  max_level?: number;
+}
+
+/** `gamification.next_rank` — the rank the player is climbing toward. */
+export interface HamaraNextRank {
+  rank_name?: string;
+  level?: number;
+  xp_required?: number;
+  xp_remaining?: number;
+  reward_type?: string | null;
+  reward_value?: number | null;
+}
+
+/** One entry of `gamification.levels` — a single level band. */
+export interface HamaraLevelTier {
+  rank_name?: string;
+  level?: number;
+  xp_start?: number;
+  xp_end?: number;
+  reward_type?: string | null;
+  reward_value?: number | null;
+}
+
+/** One entry of `gamification.logs` — an audited gamification action. */
+export interface HamaraGamificationLog {
+  id: string;
+  player_id?: string;
+  action: string;
+  detail: string;
+  actor: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+/**
+ * The nested `gamification` object Hamara attaches to a player on
+ * `POST /players/by-email`. Every field is optional — Hamara is the
+ * source of truth but may be unreachable or partially populated.
+ */
+export interface HamaraGamification {
+  progress?: HamaraGamificationProgress;
+  next_rank?: HamaraNextRank | null;
+  levels?: HamaraLevelTier[];
+  ranks?: Array<Record<string, unknown>>;
+  missions?: unknown[];
+  mission_bundles?: unknown[];
+  reward_shop?: unknown[];
+  rewards?: unknown[];
+  logs?: HamaraGamificationLog[];
+}
+
 /**
  * Shape of the gamification profile a player carries in Hamara Engage.
  * These mirror the actual Hamara `players` payload (snake_case). Every
@@ -43,6 +100,13 @@ export interface HamaraUserProfileData {
   xp_to_next?: number;
   rank_name?: string;
   tokens?: number;
+
+  /**
+   * Rich nested gamification payload (progress, next_rank, levels,
+   * ranks, logs, …). Present on the `by-email` player fetch; absent on
+   * leaner payloads, so treat as optional.
+   */
+  gamification?: HamaraGamification;
 
   /** Optional XP ledger (absent on the basic player payload). */
   xp_history?: Array<{
