@@ -8,7 +8,10 @@ let io: Server | null = null;
 
 export const initSocket = (httpServer: HttpServer): Server => {
   io = new Server(httpServer, {
-    cors: { origin: env.corsOrigins, credentials: true },
+    cors: {
+      origin: env.corsOrigins.length > 0 ? env.corsOrigins : true,
+      credentials: true,
+    },
     maxHttpBufferSize: 1e6,
   });
 

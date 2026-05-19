@@ -21,7 +21,10 @@ const env = {
   isProd,
   nodeEnv: process.env.NODE_ENV || "development",
   port: Number(process.env.PORT) || 5001,
-  corsOrigins: (process.env.CORS_ORIGINS || "http://localhost:5174")
+  // Explicit allow-list from CORS_ORIGINS (comma-separated). If unset, the
+  // app reflects any request origin (see app.ts) so deploys work without
+  // extra config; set CORS_ORIGINS to lock this down.
+  corsOrigins: (process.env.CORS_ORIGINS || "")
     .split(",")
     .map((o) => o.trim())
     .filter(Boolean),

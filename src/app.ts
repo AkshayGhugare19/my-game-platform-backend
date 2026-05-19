@@ -30,7 +30,14 @@ const app = express();
 
 // ─── Security & utils ──────────────────────────────────────────────
 app.use(helmet());
-app.use(cors({ origin: env.corsOrigins, credentials: true }));
+// If CORS_ORIGINS is set, use it as an allow-list; otherwise reflect the
+// request origin (allows any site, still compatible with credentials).
+app.use(
+  cors({
+    origin: env.corsOrigins.length > 0 ? env.corsOrigins : true,
+    credentials: true,
+  })
+);
 app.use(morgan(env.isProd ? "combined" : "dev"));
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true }));
