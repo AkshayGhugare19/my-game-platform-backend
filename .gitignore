@@ -1,0 +1,24 @@
+# add git ignore file to ignore node_modules and dist folders
+node_modules/
+dist/
+# package-lock.json file is generated automatically and can cause merge conflicts, so we can ignore it
+package-lock.json
+# add git ignore file to ignore .env file
+.env
+.env.local
+.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.development
+.env.test
+# add git ignore file to ignore logs
+logs/   
+# add git ignore file to ignore coverage reports
+coverage/
+# add git ignore file to ignore IDE specific files
+.idea/
+.vscode/
+# add git ignore file to ignore OS specific files
+.DS_Store
+Thumbs.db
