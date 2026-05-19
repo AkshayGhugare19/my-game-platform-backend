@@ -1,10 +1,10 @@
 import { Response } from "express";
-import { AuthRequest } from "../../../types/request.type";
-import { successResponse, errorResponse } from "../../../utils/responseHandler";
-import { AppError } from "../../../utils/AppError";
-import RewardRepository from "../model/reward.repository";
-import UserRewardRepository from "../model/user-reward.repository";
-import { claimReward } from "../service/reward.engine";
+import { AuthRequest } from "../../../types/request.type.ts";
+import { successResponse, errorResponse } from "../../../utils/responseHandler.ts";
+import { AppError } from "../../../utils/AppError.ts";
+import RewardRepository from "../model/reward.repository.ts";
+import UserRewardRepository from "../model/user-reward.repository.ts";
+import { claimReward } from "../service/reward.engine.ts";
 
 export const getMyRewards = async (
   req: AuthRequest,

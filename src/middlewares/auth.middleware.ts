@@ -1,6 +1,6 @@
 import { Response, NextFunction } from "express";
-import { AuthRequest } from "../types/request.type";
-import { verifyAccessToken } from "../utils/tokens";
+import { AuthRequest } from "../types/request.type.ts";
+import { verifyAccessToken } from "../utils/tokens.ts";
 
 export const auth = (
   req: AuthRequest,

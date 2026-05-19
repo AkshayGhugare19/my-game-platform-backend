@@ -1,8 +1,8 @@
 import { QueryTypes } from "sequelize";
-import sequelize from "../../../config/db";
-import { startOfIsoWeek, startOfMonth } from "../../../utils/period";
-import UserRepository from "../../user/model/user.repository";
-import { emitLeaderboard } from "../../../realtime/socket";
+import sequelize from "../../../config/db.ts";
+import { startOfIsoWeek, startOfMonth } from "../../../utils/period.ts";
+import UserRepository from "../../user/model/user.repository.ts";
+import { emitLeaderboard } from "../../../realtime/socket.ts";
 
 /**
  * Postgres-backed leaderboard (no Redis). Since the GamificationProfile

@@ -1,7 +1,7 @@
-import { AppError } from "../../../utils/AppError";
-import { logger } from "../../../utils/logger";
-import { hamaraUserProfileData, HamaraUserProfileData, } from "../../../utils/hamaraEngageService";
-import UserRepository from "../../user/model/user.repository";
+import { AppError } from "../../../utils/AppError.ts";
+import { logger } from "../../../utils/logger.ts";
+import { hamaraUserProfileData, HamaraUserProfileData, } from "../../../utils/hamaraEngageService.ts";
+import UserRepository from "../../user/model/user.repository.ts";
 
 interface ProfileUser {
   id: string;

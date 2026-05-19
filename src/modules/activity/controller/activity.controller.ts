@@ -1,8 +1,8 @@
 import { Response } from "express";
-import { AuthRequest } from "../../../types/request.type";
-import { successResponse, errorResponse } from "../../../utils/responseHandler";
-import { AppError } from "../../../utils/AppError";
-import { recordActivity, gameHistory } from "../service/activity.service";
+import { AuthRequest } from "../../../types/request.type.ts";
+import { successResponse, errorResponse } from "../../../utils/responseHandler.ts";
+import { AppError } from "../../../utils/AppError.ts";
+import { recordActivity, gameHistory } from "../service/activity.service.ts";
 
 export const postActivity = async (
   req: AuthRequest,

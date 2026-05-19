@@ -2,8 +2,8 @@ import { Router } from "express";
 import {
   getMyProfile,
   getMyXpHistory,
-} from "../modules/profile/controller/profile.controller";
-import { auth } from "../middlewares/auth.middleware";
+} from "../modules/profile/controller/profile.controller.ts";
+import { auth } from "../middlewares/auth.middleware.ts";
 
 const router = Router();
 

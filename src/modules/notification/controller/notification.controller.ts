@@ -1,12 +1,12 @@
 import { Response } from "express";
-import { AuthRequest } from "../../../types/request.type";
-import { successResponse, errorResponse } from "../../../utils/responseHandler";
+import { AuthRequest } from "../../../types/request.type.ts";
+import { successResponse, errorResponse } from "../../../utils/responseHandler.ts";
 import {
   listNotifications,
   unreadCount,
   markRead,
   markAllRead,
-} from "../service/notification.service";
+} from "../service/notification.service.ts";
 
 export const list = async (
   req: AuthRequest,

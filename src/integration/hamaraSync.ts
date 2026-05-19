@@ -1,5 +1,5 @@
-import env from "../config/env";
-import { logger } from "../utils/logger";
+import env from "../config/env.ts";
+import { logger } from "../utils/logger.ts";
 
 /**
  * Lightweight one-way push of gamification events to hamara-engage-backend.

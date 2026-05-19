@@ -3,9 +3,9 @@
  * Sequelize models. Use sequelize-cli migrations for production
  * (`npm run db:migrate`).
  */
-import sequelize from "./db";
-import { initAssociations } from "./associations";
-import { registerModels } from "./models";
+import sequelize from "./db.ts";
+import { initAssociations } from "./associations.ts";
+import { registerModels } from "./models.ts";
 
 const sync = async () => {
   registerModels();

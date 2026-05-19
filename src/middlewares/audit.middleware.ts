@@ -1,6 +1,6 @@
 import { Response, NextFunction } from "express";
-import { AuthRequest } from "../types/request.type";
-import { recordAudit } from "../modules/audit/service/audit.service";
+import { AuthRequest } from "../types/request.type.ts";
+import { recordAudit } from "../modules/audit/service/audit.service.ts";
 
 /**
  * Records an audit row for mutating routes after a successful response.

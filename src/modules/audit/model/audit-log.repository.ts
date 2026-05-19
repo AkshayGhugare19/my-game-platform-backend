@@ -1,5 +1,5 @@
-import { BaseRepository } from "../../../core/models/base.repository";
-import AuditLog from "./audit-log.model";
+import { BaseRepository } from "../../../core/models/base.repository.ts";
+import AuditLog from "./audit-log.model.ts";
 
 class AuditLogRepository extends BaseRepository<AuditLog> {
   constructor() {

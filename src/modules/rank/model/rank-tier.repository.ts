@@ -1,6 +1,6 @@
 import { Op } from "sequelize";
-import { BaseRepository } from "../../../core/models/base.repository";
-import RankTier from "./rank-tier.model";
+import { BaseRepository } from "../../../core/models/base.repository.ts";
+import RankTier from "./rank-tier.model.ts";
 
 class RankTierRepository extends BaseRepository<RankTier> {
   constructor() {

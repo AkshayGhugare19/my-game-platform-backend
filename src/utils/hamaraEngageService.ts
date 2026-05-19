@@ -1,5 +1,5 @@
-import env from "../config/env";
-import { logger } from "./logger";
+import env from "../config/env.ts";
+import { logger } from "./logger.ts";
 export interface HamaraEngageUserPayload {
   first_name: string;
   last_name: string;

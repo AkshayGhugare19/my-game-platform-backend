@@ -1,5 +1,5 @@
 import { Response, NextFunction } from "express";
-import { AuthRequest } from "../types/request.type";
+import { AuthRequest } from "../types/request.type.ts";
 
 export const role =
   (...roles: string[]) =>

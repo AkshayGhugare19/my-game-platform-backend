@@ -1,5 +1,5 @@
-import { logger } from "../utils/logger";
-import { expirySweep } from "../modules/reward/service/reward.engine";
+import { logger } from "../utils/logger.ts";
+import { expirySweep } from "../modules/reward/service/reward.engine.ts";
 
 /**
  * Lightweight in-process scheduler (single instance). For horizontal

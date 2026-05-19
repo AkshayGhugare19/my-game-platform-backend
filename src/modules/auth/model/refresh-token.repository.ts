@@ -1,5 +1,5 @@
-import { BaseRepository } from "../../../core/models/base.repository";
-import RefreshToken from "./refresh-token.model";
+import { BaseRepository } from "../../../core/models/base.repository.ts";
+import RefreshToken from "./refresh-token.model.ts";
 
 class RefreshTokenRepository extends BaseRepository<RefreshToken> {
   constructor() {

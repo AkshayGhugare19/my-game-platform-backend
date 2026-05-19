@@ -1,5 +1,5 @@
 import { EventEmitter } from "events";
-import { logger } from "../utils/logger";
+import { logger } from "../utils/logger.ts";
 
 /**
  * In-process domain event bus. This is the single seam to swap for

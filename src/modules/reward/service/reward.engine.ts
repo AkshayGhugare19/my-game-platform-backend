@@ -1,8 +1,8 @@
-import { AppError } from "../../../utils/AppError";
-import RewardRepository from "../model/reward.repository";
-import UserRewardRepository from "../model/user-reward.repository";
-import { bus } from "../../../events/eventBus";
-import { EVENTS } from "../../../events/events";
+import { AppError } from "../../../utils/AppError.ts";
+import RewardRepository from "../model/reward.repository.ts";
+import UserRewardRepository from "../model/user-reward.repository.ts";
+import { bus } from "../../../events/eventBus.ts";
+import { EVENTS } from "../../../events/events.ts";
 
 const expiryDate = (days: number | null): Date | null =>
   days ? new Date(Date.now() + days * 86400000) : null;

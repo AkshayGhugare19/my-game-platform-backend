@@ -1,7 +1,7 @@
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { v4 as uuid } from "uuid";
-import env from "../config/env";
+import env from "../config/env.ts";
 
 export interface AccessPayload {
   id: string;

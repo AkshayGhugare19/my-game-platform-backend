@@ -1,6 +1,6 @@
 import { Op } from "sequelize";
-import { BaseRepository } from "../../../core/models/base.repository";
-import Mission from "./mission.model";
+import { BaseRepository } from "../../../core/models/base.repository.ts";
+import Mission from "./mission.model.ts";
 
 class MissionRepository extends BaseRepository<Mission> {
   constructor() {

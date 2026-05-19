@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import env from "../config/env";
+import env from "../config/env.ts";
 
 /**
  * Reverses the frontend's AES-256-GCM login-password obfuscation so the

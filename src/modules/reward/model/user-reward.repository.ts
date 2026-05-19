@@ -1,6 +1,6 @@
 import { Op } from "sequelize";
-import { BaseRepository } from "../../../core/models/base.repository";
-import UserReward from "./user-reward.model";
+import { BaseRepository } from "../../../core/models/base.repository.ts";
+import UserReward from "./user-reward.model.ts";
 
 class UserRewardRepository extends BaseRepository<UserReward> {
   constructor() {

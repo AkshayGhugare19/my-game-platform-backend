@@ -1,6 +1,6 @@
 import { Op, fn, col, where as sqWhere, literal } from "sequelize";
-import { BaseRepository } from "../../../core/models/base.repository";
-import XpHistory from "./xp-history.model";
+import { BaseRepository } from "../../../core/models/base.repository.ts";
+import XpHistory from "./xp-history.model.ts";
 
 class XpHistoryRepository extends BaseRepository<XpHistory> {
   constructor() {

@@ -1,7 +1,7 @@
 import { Response } from "express";
-import { AuthRequest } from "../../../types/request.type";
-import { successResponse, errorResponse } from "../../../utils/responseHandler";
-import { getBoard, myPositions } from "../service/leaderboard.service";
+import { AuthRequest } from "../../../types/request.type.ts";
+import { successResponse, errorResponse } from "../../../utils/responseHandler.ts";
+import { getBoard, myPositions } from "../service/leaderboard.service.ts";
 
 const board =
   (which: "global" | "weekly" | "monthly") =>

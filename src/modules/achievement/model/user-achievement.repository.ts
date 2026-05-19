@@ -1,5 +1,5 @@
-import { BaseRepository } from "../../../core/models/base.repository";
-import UserAchievement from "./user-achievement.model";
+import { BaseRepository } from "../../../core/models/base.repository.ts";
+import UserAchievement from "./user-achievement.model.ts";
 
 class UserAchievementRepository extends BaseRepository<UserAchievement> {
   constructor() {

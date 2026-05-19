@@ -5,28 +5,28 @@ import dotenv from "dotenv";
 import morgan from "morgan";
 import swaggerUi from "swagger-ui-express";
 
-import env from "./config/env";
-import { swaggerSpec } from "./config/swagger";
-import { errorHandler } from "./middlewares/error.middleware";
+import env from "./config/env.ts";
+import { swaggerSpec } from "./config/swagger.ts";
+import { errorHandler } from "./middlewares/error.middleware.ts";
 
-import authRoutes from "./route/auth.routes";
-import activityRoutes from "./route/activity.routes";
-import missionRoutes from "./route/mission.routes";
-import rewardRoutes from "./route/reward.routes";
-import leaderboardRoutes from "./route/leaderboard.routes";
-import notificationRoutes from "./route/notification.routes";
-import userRoutes from "./route/user.routes";
-import profileRoutes from "./route/profile.routes";
+import authRoutes from "./route/auth.routes.ts";
+import activityRoutes from "./route/activity.routes.ts";
+import missionRoutes from "./route/mission.routes.ts";
+import rewardRoutes from "./route/reward.routes.ts";
+import leaderboardRoutes from "./route/leaderboard.routes.ts";
+import notificationRoutes from "./route/notification.routes.ts";
+import userRoutes from "./route/user.routes.ts";
+import profileRoutes from "./route/profile.routes.ts";
 import {
   levelsRouter,
   ranksRouter,
   xpRouter,
-} from "./route/config.routes";
+} from "./route/config.routes.ts";
 import {
   achievementsRouter,
   auditRouter,
-} from "./route/misc.routes";
-import { initAssociations } from "./config/associations";
+} from "./route/misc.routes.ts";
+import { initAssociations } from "./config/associations.ts";
 
 dotenv.config();
 

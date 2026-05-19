@@ -1,5 +1,5 @@
-import AuditLogRepository from "../model/audit-log.repository";
-import { logger } from "../../../utils/logger";
+import AuditLogRepository from "../model/audit-log.repository.ts";
+import { logger } from "../../../utils/logger.ts";
 
 interface AuditInput {
   actorId: string | null;

@@ -4,8 +4,8 @@ import {
   count,
   readOne,
   readAll,
-} from "../modules/notification/controller/notification.controller";
-import { auth } from "../middlewares/auth.middleware";
+} from "../modules/notification/controller/notification.controller.ts";
+import { auth } from "../middlewares/auth.middleware.ts";
 
 const router = Router();
 

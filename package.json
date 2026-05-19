@@ -2,11 +2,11 @@
   "name": "gamify-engage-backend",
   "version": "1.0.0",
   "description": "Production gamification platform — Express + TS + Sequelize/PostgreSQL + Redis + Socket.IO",
-  "main": "dist/server.js",
+  "main": "src/server.ts",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc && node -e \"require('fs').cpSync('src/templates','dist/templates',{recursive:true})\"",
-    "start": "node dist/server.js",
+    "start": "node src/server.ts",
     "db:migrate": "sequelize-cli db:migrate",
     "db:migrate:undo": "sequelize-cli db:migrate:undo",
     "db:seed": "sequelize-cli db:seed:all",

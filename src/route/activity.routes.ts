@@ -2,14 +2,14 @@ import { Router } from "express";
 import {
   postActivity,
   getGameHistory,
-} from "../modules/activity/controller/activity.controller";
-import { auth } from "../middlewares/auth.middleware";
-import { validate } from "../middlewares/validate.middleware";
-import { rateLimiter } from "../middlewares/rateLimit.middleware";
+} from "../modules/activity/controller/activity.controller.ts";
+import { auth } from "../middlewares/auth.middleware.ts";
+import { validate } from "../middlewares/validate.middleware.ts";
+import { rateLimiter } from "../middlewares/rateLimit.middleware.ts";
 import {
   recordActivitySchema,
   paginationSchema,
-} from "../validations/activity.validation";
+} from "../validations/activity.validation.ts";
 
 const router = Router();
 

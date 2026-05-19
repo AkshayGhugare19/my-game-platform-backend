@@ -3,8 +3,8 @@ import {
   getMyRewards,
   getCatalog,
   claim,
-} from "../modules/reward/controller/reward.controller";
-import { auth } from "../middlewares/auth.middleware";
+} from "../modules/reward/controller/reward.controller.ts";
+import { auth } from "../middlewares/auth.middleware.ts";
 
 const router = Router();
 

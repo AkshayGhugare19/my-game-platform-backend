@@ -3,8 +3,8 @@ import {
   getMyMissions,
   getCatalog,
   claim,
-} from "../modules/mission/controller/mission.controller";
-import { auth } from "../middlewares/auth.middleware";
+} from "../modules/mission/controller/mission.controller.ts";
+import { auth } from "../middlewares/auth.middleware.ts";
 
 const router = Router();
 

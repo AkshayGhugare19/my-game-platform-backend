@@ -1,10 +1,10 @@
 import { Request, Response } from "express";
-import { successResponse, errorResponse } from "../../../utils/responseHandler";
-import { AppError } from "../../../utils/AppError";
-import LevelTierRepository from "../../level/model/level-tier.repository";
-import RankTierRepository from "../../rank/model/rank-tier.repository";
-import XpRuleRepository from "../model/xp-rule.repository";
-import { awardXp } from "../service/xp.engine";
+import { successResponse, errorResponse } from "../../../utils/responseHandler.ts";
+import { AppError } from "../../../utils/AppError.ts";
+import LevelTierRepository from "../../level/model/level-tier.repository.ts";
+import RankTierRepository from "../../rank/model/rank-tier.repository.ts";
+import XpRuleRepository from "../model/xp-rule.repository.ts";
+import { awardXp } from "../service/xp.engine.ts";
 
 const ok = (res: Response, msg: string, data: unknown) =>
   successResponse(res, 200, msg, data);

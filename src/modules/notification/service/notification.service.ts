@@ -1,7 +1,7 @@
-import NotificationRepository from "../model/notification.repository";
-import { NotificationType } from "../model/notification.model";
-import { emitToUser } from "../../../realtime/socket";
-import { logger } from "../../../utils/logger";
+import NotificationRepository from "../model/notification.repository.ts";
+import { NotificationType } from "../model/notification.model.ts";
+import { emitToUser } from "../../../realtime/socket.ts";
+import { logger } from "../../../utils/logger.ts";
 
 /**
  * Persists a notification AND pushes it live. Persisting first means an

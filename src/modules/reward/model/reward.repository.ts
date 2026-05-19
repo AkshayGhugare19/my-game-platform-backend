@@ -1,5 +1,5 @@
-import { BaseRepository } from "../../../core/models/base.repository";
-import Reward from "./reward.model";
+import { BaseRepository } from "../../../core/models/base.repository.ts";
+import Reward from "./reward.model.ts";
 
 class RewardRepository extends BaseRepository<Reward> {
   constructor() {

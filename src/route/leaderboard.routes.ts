@@ -4,8 +4,8 @@ import {
   getWeekly,
   getMonthly,
   getMe,
-} from "../modules/leaderboard/controller/leaderboard.controller";
-import { auth } from "../middlewares/auth.middleware";
+} from "../modules/leaderboard/controller/leaderboard.controller.ts";
+import { auth } from "../middlewares/auth.middleware.ts";
 
 const router = Router();
 

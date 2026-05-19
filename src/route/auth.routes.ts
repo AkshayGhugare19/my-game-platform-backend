@@ -6,17 +6,17 @@ import {
   logout,
   resetPassword,
   me,
-} from "../modules/auth/controller/auth.controller";
-import { validate } from "../middlewares/validate.middleware";
-import { auth } from "../middlewares/auth.middleware";
-import { rateLimiter } from "../middlewares/rateLimit.middleware";
-import { audit } from "../middlewares/audit.middleware";
+} from "../modules/auth/controller/auth.controller.ts";
+import { validate } from "../middlewares/validate.middleware.ts";
+import { auth } from "../middlewares/auth.middleware.ts";
+import { rateLimiter } from "../middlewares/rateLimit.middleware.ts";
+import { audit } from "../middlewares/audit.middleware.ts";
 import {
   registerSchema,
   loginSchema,
   refreshSchema,
   resetPasswordSchema,
-} from "../validations/auth.validation";
+} from "../validations/auth.validation.ts";
 
 const router = Router();
 const tight = rateLimiter("auth", { windowMs: 15 * 60_000, max: 20 });

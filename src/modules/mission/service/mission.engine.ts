@@ -1,13 +1,13 @@
-import { AppError } from "../../../utils/AppError";
-import { periodKeyFor } from "../../../utils/period";
-import { bus } from "../../../events/eventBus";
-import { EVENTS } from "../../../events/events";
-import MissionRepository from "../model/mission.repository";
-import UserMissionRepository from "../model/user-mission.repository";
-import { Mission, MissionMetric } from "../model/mission.model";
-import RankTierRepository from "../../rank/model/rank-tier.repository";
-import { awardXp } from "../../xp/service/xp.engine";
-import { grantReward } from "../../reward/service/reward.engine";
+import { AppError } from "../../../utils/AppError.ts";
+import { periodKeyFor } from "../../../utils/period.ts";
+import { bus } from "../../../events/eventBus.ts";
+import { EVENTS } from "../../../events/events.ts";
+import MissionRepository from "../model/mission.repository.ts";
+import UserMissionRepository from "../model/user-mission.repository.ts";
+import { Mission, MissionMetric } from "../model/mission.model.ts";
+import RankTierRepository from "../../rank/model/rank-tier.repository.ts";
+import { awardXp } from "../../xp/service/xp.engine.ts";
+import { grantReward } from "../../reward/service/reward.engine.ts";
 
 const rankAllows = async (
   required: string | null,

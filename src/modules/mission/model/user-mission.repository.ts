@@ -1,5 +1,5 @@
-import { BaseRepository } from "../../../core/models/base.repository";
-import UserMission from "./user-mission.model";
+import { BaseRepository } from "../../../core/models/base.repository.ts";
+import UserMission from "./user-mission.model.ts";
 
 class UserMissionRepository extends BaseRepository<UserMission> {
   constructor() {

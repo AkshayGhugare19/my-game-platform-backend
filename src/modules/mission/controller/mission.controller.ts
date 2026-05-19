@@ -1,12 +1,12 @@
 import { Response } from "express";
-import { AuthRequest } from "../../../types/request.type";
-import { successResponse, errorResponse } from "../../../utils/responseHandler";
-import { AppError } from "../../../utils/AppError";
+import { AuthRequest } from "../../../types/request.type.ts";
+import { successResponse, errorResponse } from "../../../utils/responseHandler.ts";
+import { AppError } from "../../../utils/AppError.ts";
 import {
   listUserMissions,
   claimMission,
-} from "../service/mission.engine";
-import MissionRepository from "../model/mission.repository";
+} from "../service/mission.engine.ts";
+import MissionRepository from "../model/mission.repository.ts";
 
 export const getMyMissions = async (
   req: AuthRequest,

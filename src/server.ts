@@ -1,13 +1,13 @@
 import http from "http";
-import env from "./config/env";
-import app from "./app";
-import sequelize from "./config/db";
-import { registerModels } from "./config/models";
-import { initAssociations } from "./config/associations";
-import { registerEventHandlers } from "./events/registerHandlers";
-import { initSocket } from "./realtime/socket";
-import { startCronJobs } from "./jobs";
-import { logger } from "./utils/logger";
+import env from "./config/env.ts";
+import app from "./app.ts";
+import sequelize from "./config/db.ts";
+import { registerModels } from "./config/models.ts";
+import { initAssociations } from "./config/associations.ts";
+import { registerEventHandlers } from "./events/registerHandlers.ts";
+import { initSocket } from "./realtime/socket.ts";
+import { startCronJobs } from "./jobs/index.ts";
+import { logger } from "./utils/logger.ts";
 
 const startServer = async (): Promise<void> => {
   try {
@@ -17,6 +17,7 @@ const startServer = async (): Promise<void> => {
 
     await sequelize.authenticate();
     logger.info("✅ PostgreSQL connected");
+    console.log("✅ PostgreSQL connected");
 
     const server = http.createServer(app);
     initSocket(server);
@@ -27,7 +28,6 @@ const startServer = async (): Promise<void> => {
       logger.info(`📚 Swagger: http://localhost:${env.port}/api/docs`);
     });
   } catch (error) {
-    logger.error("❌ Startup failed", { error: (error as Error).message });
     process.exit(1);
   }
 };

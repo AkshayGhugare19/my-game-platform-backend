@@ -1,12 +1,12 @@
-import { bus } from "../../../events/eventBus";
-import { EVENTS } from "../../../events/events";
-import ActivityLogRepository from "../model/activity-log.repository";
-import { awardXp } from "../../xp/service/xp.engine";
-import UserRepository from "../../user/model/user.repository";
+import { bus } from "../../../events/eventBus.ts";
+import { EVENTS } from "../../../events/events.ts";
+import ActivityLogRepository from "../model/activity-log.repository.ts";
+import { awardXp } from "../../xp/service/xp.engine.ts";
+import UserRepository from "../../user/model/user.repository.ts";
 import {
   hamaraAddXpPoints,
   HamaraAddXpPointUserResponse,
-} from "../../../utils/hamaraEngageService";
+} from "../../../utils/hamaraEngageService.ts";
 
 export interface RecordActivityInput {
   userId: string;

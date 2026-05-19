@@ -5,11 +5,11 @@ import {
   refreshService,
   logoutService,
   resetPasswordService,
-} from "../service/auth.service";
-import UserRepository from "../../user/model/user.repository";
-import { successResponse, errorResponse } from "../../../utils/responseHandler";
-import { AppError } from "../../../utils/AppError";
-import { AuthRequest } from "../../../types/request.type";
+} from "../service/auth.service.ts";
+import UserRepository from "../../user/model/user.repository.ts";
+import { successResponse, errorResponse } from "../../../utils/responseHandler.ts";
+import { AppError } from "../../../utils/AppError.ts";
+import { AuthRequest } from "../../../types/request.type.ts";
 
 const meta = (req: Request) => ({
   ip: req.ip,

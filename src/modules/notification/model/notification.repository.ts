@@ -1,5 +1,5 @@
-import { BaseRepository } from "../../../core/models/base.repository";
-import Notification from "./notification.model";
+import { BaseRepository } from "../../../core/models/base.repository.ts";
+import Notification from "./notification.model.ts";
 
 class NotificationRepository extends BaseRepository<Notification> {
   constructor() {

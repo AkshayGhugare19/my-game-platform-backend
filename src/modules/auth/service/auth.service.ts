@@ -1,23 +1,23 @@
 import bcrypt from "bcryptjs";
-import { AppError } from "../../../utils/AppError";
-import { decryptPassword } from "../../../utils/passwordCrypto";
+import { AppError } from "../../../utils/AppError.ts";
+import { decryptPassword } from "../../../utils/passwordCrypto.ts";
 import {
   signAccessToken,
   createRefreshToken,
   verifyRefreshToken,
   hashToken,
-} from "../../../utils/tokens";
-import { bus } from "../../../events/eventBus";
-import { EVENTS } from "../../../events/events";
-import UserRepository from "../../user/model/user.repository";
-import RefreshTokenRepository from "../model/refresh-token.repository";
-import User from "../../user/model/user.model";
-import { seedInitialUserMissions } from "../../mission/service/mission.engine";
+} from "../../../utils/tokens.ts";
+import { bus } from "../../../events/eventBus.ts";
+import { EVENTS } from "../../../events/events.ts";
+import UserRepository from "../../user/model/user.repository.ts";
+import RefreshTokenRepository from "../model/refresh-token.repository.ts";
+import User from "../../user/model/user.model.ts";
+import { seedInitialUserMissions } from "../../mission/service/mission.engine.ts";
 import {
   createHamaraEngageUser,
   deriveUsername,
-} from "../../../utils/hamaraEngageService";
-import { syncToHamara } from "../../../integration/hamaraSync";
+} from "../../../utils/hamaraEngageService.ts";
+import { syncToHamara } from "../../../integration/hamaraSync.ts";
 
 interface RegisterInput {
   first_name: string;

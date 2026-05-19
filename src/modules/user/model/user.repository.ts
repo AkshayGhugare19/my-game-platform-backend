@@ -1,5 +1,5 @@
-import { BaseRepository } from "../../../core/models/base.repository";
-import User from "./user.model";
+import { BaseRepository } from "../../../core/models/base.repository.ts";
+import User from "./user.model.ts";
 
 class UserRepository extends BaseRepository<User> {
   constructor() {

@@ -6,10 +6,10 @@ import {
   upsertXpRule,
   deleteXpRule,
   adminGrantXp,
-} from "../modules/xp/controller/config.controller";
-import { auth } from "../middlewares/auth.middleware";
-import { role } from "../middlewares/role.middleware";
-import { audit } from "../middlewares/audit.middleware";
+} from "../modules/xp/controller/config.controller.ts";
+import { auth } from "../middlewares/auth.middleware.ts";
+import { role } from "../middlewares/role.middleware.ts";
+import { audit } from "../middlewares/audit.middleware.ts";
 
 /**
  * @swagger

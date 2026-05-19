@@ -1,5 +1,5 @@
-import { BaseRepository } from "../../../core/models/base.repository";
-import XpRule from "./xp-rule.model";
+import { BaseRepository } from "../../../core/models/base.repository.ts";
+import XpRule from "./xp-rule.model.ts";
 
 class XpRuleRepository extends BaseRepository<XpRule> {
   constructor() {
