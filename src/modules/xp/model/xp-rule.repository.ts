@@ -1,0 +1,14 @@
+import { BaseRepository } from "../../../core/models/base.repository";
+import XpRule from "./xp-rule.model";
+
+class XpRuleRepository extends BaseRepository<XpRule> {
+  constructor() {
+    super(XpRule);
+  }
+
+  byCode(code: string): Promise<XpRule | null> {
+    return this.findOne({ code });
+  }
+}
+
+export default new XpRuleRepository();
