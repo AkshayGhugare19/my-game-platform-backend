@@ -11,10 +11,6 @@ import { auth } from "../middlewares/auth.middleware.ts";
 import { role } from "../middlewares/role.middleware.ts";
 import { audit } from "../middlewares/audit.middleware.ts";
 
-/**
- * @swagger
- * tags: [{ name: Config }]
- */
 const levels = Router();
 levels.get("/", auth, listLevels);
 
@@ -23,13 +19,7 @@ ranks.get("/", auth, listRanks);
 
 const xp = Router();
 xp.get("/rules", auth, role("ADMIN"), listXpRules);
-xp.post(
-  "/rules",
-  auth,
-  role("ADMIN"),
-  audit("UPSERT", "xp_rule"),
-  upsertXpRule
-);
+xp.post("/rules", auth, role("ADMIN"), audit("UPSERT", "xp_rule"), upsertXpRule);
 xp.delete(
   "/rules/:id",
   auth,

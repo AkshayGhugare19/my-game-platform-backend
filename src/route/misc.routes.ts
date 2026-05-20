@@ -10,13 +10,7 @@ import AuditLogRepository from "../modules/audit/model/audit-log.repository.ts";
 
 /* ── Achievements ───────────────────────────────────────────────── */
 const achievements = Router();
-/**
- * @swagger
- * /api/achievements:
- *   get: { summary: My achievements, tags: [Achievements], security: [{ bearerAuth: [] }], responses: { 200: { description: OK } } }
- * /api/achievements/catalog:
- *   get: { summary: Achievement catalog, tags: [Achievements], security: [{ bearerAuth: [] }], responses: { 200: { description: OK } } }
- */
+
 achievements.get("/", auth, async (req: AuthRequest, res: Response) => {
   try {
     successResponse(
@@ -39,11 +33,7 @@ achievements.get("/catalog", auth, async (_req: Request, res: Response) => {
 
 /* ── Audit log (admin) ──────────────────────────────────────────── */
 const auditR = Router();
-/**
- * @swagger
- * /api/audit:
- *   get: { summary: Audit log (admin), tags: [Audit], security: [{ bearerAuth: [] }], responses: { 200: { description: OK }, 403: { description: Forbidden } } }
- */
+
 auditR.get("/", auth, role("ADMIN"), async (req: Request, res: Response) => {
   try {
     const page = Number(req.query.page) || 1;
