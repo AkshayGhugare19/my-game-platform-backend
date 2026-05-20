@@ -1,13 +1,16 @@
-import type { Response, NextFunction } from "express";
+import type { Request, Response, NextFunction, RequestHandler } from "express";
 import type { AuthRequest } from "../types/request.type.ts";
 import { verifyAccessToken } from "../utils/tokens.ts";
 
-export const auth = (
-  req: AuthRequest,
+export type AuthHandler = RequestHandler & { __requiresAuth?: boolean };
+
+export const auth: AuthHandler = (
+  req: Request,
   res: Response,
   next: NextFunction
 ): void => {
-  const header = req.headers.authorization;
+  const authReq = req as AuthRequest;
+  const header = authReq.headers.authorization;
 
   if (!header || !header.startsWith("Bearer ")) {
     res.status(401).json({ success: false, message: "Unauthorized" });
@@ -16,7 +19,7 @@ export const auth = (
 
   try {
     const decoded = verifyAccessToken(header.split(" ")[1]);
-    req.user = { id: decoded.id, email: decoded.email, role: decoded.role };
+    authReq.user = { id: decoded.id, email: decoded.email, role: decoded.role };
     next();
   } catch {
     res
@@ -24,3 +27,5 @@ export const auth = (
       .json({ success: false, message: "Invalid or expired token" });
   }
 };
+
+auth.__requiresAuth = true;

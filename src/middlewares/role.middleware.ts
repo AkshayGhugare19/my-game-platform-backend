@@ -1,14 +1,16 @@
-import type { Response, NextFunction } from "express";
+import type { Response, NextFunction, RequestHandler } from "express";
 import type { AuthRequest } from "../types/request.type.ts";
 
-export const role =
-  (...roles: string[]) =>
-  (req: AuthRequest, res: Response, next: NextFunction): void => {
-    if (!req.user) {
+export type RoleHandler = RequestHandler & { __requiredRoles?: string[] };
+
+export const role = (...roles: string[]): RoleHandler => {
+  const handler: RoleHandler = (req, res, next): void => {
+    const authReq = req as AuthRequest;
+    if (!authReq.user) {
       res.status(401).json({ success: false, message: "Unauthorized" });
       return;
     }
-    if (!roles.includes(req.user.role)) {
+    if (!roles.includes(authReq.user.role)) {
       res.status(403).json({
         success: false,
         message: "Forbidden: Insufficient permissions",
@@ -17,3 +19,6 @@ export const role =
     }
     next();
   };
+  handler.__requiredRoles = roles;
+  return handler;
+};

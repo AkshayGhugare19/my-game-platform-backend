@@ -1,9 +1,20 @@
-import type { Request, Response, NextFunction } from "express";
+import type { Request, Response, NextFunction, RequestHandler } from "express";
 import type { ObjectSchema } from "joi";
 
-export const validate =
-  (schema: ObjectSchema, property: "body" | "query" | "params" = "body") =>
-  (req: Request, res: Response, next: NextFunction): void => {
+export type ValidatingHandler = RequestHandler & {
+  __joiBody?: ObjectSchema;
+  __joiProperty?: "body" | "query" | "params";
+};
+
+export const validate = (
+  schema: ObjectSchema,
+  property: "body" | "query" | "params" = "body"
+): ValidatingHandler => {
+  const handler: ValidatingHandler = (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): void => {
     const { error, value } = schema.validate(req[property], {
       abortEarly: false,
       stripUnknown: true,
@@ -25,3 +36,8 @@ export const validate =
     req[property] = value;
     next();
   };
+
+  handler.__joiBody = schema;
+  handler.__joiProperty = property;
+  return handler;
+};
