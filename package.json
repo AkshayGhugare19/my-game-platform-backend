@@ -2,7 +2,7 @@
   "name": "gamify-engage-backend",
   "version": "1.0.0",
   "description": "Production gamification platform — Express + TS + Sequelize/PostgreSQL + Redis + Socket.IO",
-  "main": "src/server.ts",
+  "main": "dist/server.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc && node -e \"require('fs').cpSync('src/templates','dist/templates',{recursive:true})\"",
