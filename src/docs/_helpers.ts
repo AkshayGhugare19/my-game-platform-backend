@@ -13,6 +13,13 @@ export type ResponseObject = Record<string, unknown>;
 export type OperationObject = Record<string, unknown>;
 export type PathItemObject = Record<string, OperationObject>;
 export type PathsObject = Record<string, PathItemObject>;
+// Runtime-visible companion to the `PathsObject` type. Node v24's
+// type-stripper erases `export type` declarations, which breaks deploys
+// that run `node src/server.ts` directly (the `*.docs.ts` files import
+// `PathsObject` as a value, not via `import type`). Exporting an empty
+// object under the same name keeps the import resolvable at runtime
+// without changing any consumer.
+export const PathsObject: Record<string, PathItemObject> = {};
 
 /** Bearer JWT security requirement. */
 export const bearer = () => [{ bearerAuth: [] }];
