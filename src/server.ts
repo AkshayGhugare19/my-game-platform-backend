@@ -28,6 +28,9 @@ const startServer = async (): Promise<void> => {
       logger.info(`📚 Swagger: http://localhost:${env.port}/api/docs`);
     });
   } catch (error) {
+    logger.error("❌ Server startup failed", { error });
+    // eslint-disable-next-line no-console
+    console.error("❌ Server startup failed:", error);
     process.exit(1);
   }
 };
