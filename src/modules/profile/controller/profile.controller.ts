@@ -9,7 +9,7 @@ const fail = (res: Response, e: unknown, fallback: string) =>
     ? errorResponse(res, e.statusCode, e.message)
     : errorResponse(res, 500, fallback);
 
-/** GET /api/profile — current user's gamification profile (from Hamara). */
+/** GET /api/profile — current user's gamification profile (from Gamru). */
 export const getMyProfile = async (
   req: AuthRequest,
   res: Response
@@ -22,7 +22,7 @@ export const getMyProfile = async (
   }
 };
 
-/** GET /api/profile/xp/history — paginated XP ledger (from Hamara). */
+/** GET /api/profile/xp/history — paginated XP ledger (from Gamru). */
 export const getMyXpHistory = async (
   req: AuthRequest,
   res: Response

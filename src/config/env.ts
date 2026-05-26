@@ -48,16 +48,29 @@ const env = {
   passwordSecret:
     process.env.PASSWORD_SECRET || "gamify-engage-shared-password-secret",
 
-  hamaraEngage: {
-    // Base URL of the Hamara Engage backend REST API.
+  gamru: {
+    // Base URL of the gamru backend REST API.
+    // GAMRU_BACKEND_URL is the canonical name; HAMARA_ENGAGE_BACKEND is
+    // accepted as a legacy alias so older deployments keep working.
     baseUrl: (
-      process.env.HAMARA_ENGAGE_BACKEND || "http://localhost:5000/api"
+      process.env.GAMRU_BACKEND_URL ||
+      process.env.HAMARA_ENGAGE_BACKEND ||
+      "http://localhost:5000/api"
     ).replace(/\/+$/, ""),
-    timeoutMs: Number(process.env.HAMARA_ENGAGE_TIMEOUT_MS) || 8000,
-    // Shared secret for service-to-service calls (must match hamara's
+    timeoutMs:
+      Number(process.env.GAMRU_TIMEOUT_MS) ||
+      Number(process.env.HAMARA_ENGAGE_TIMEOUT_MS) ||
+      8000,
+    // Shared secret for service-to-service calls (must match gamru's
     // SERVICE_SHARED_KEY). Sent as the `x-service-key` header.
     serviceKey:
       process.env.SERVICE_SHARED_KEY || "hamara-gamify-shared-service-key",
+    // Per-client API key from gamru's `clientConfig` row that represents
+    // this game platform. REQUIRED — the process refuses to start without
+    // it because every outbound call to gamru is rejected (401) without a
+    // valid value. Get this from the gamru admin UI:
+    //   Configurations → Clients → "Auth Key" column.
+    clientAuthKey: required("GAMRU_CLIENT_AUTH_KEY"),
   },
 
   mail: {

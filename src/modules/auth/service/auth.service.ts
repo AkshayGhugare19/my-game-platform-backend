@@ -14,10 +14,11 @@ import RefreshTokenRepository from "../model/refresh-token.repository.ts";
 import User from "../../user/model/user.model.ts";
 import { seedInitialUserMissions } from "../../mission/service/mission.engine.ts";
 import {
-  createHamaraEngageUser,
+  createGamruUser,
   deriveUsername,
-} from "../../../utils/hamaraEngageService.ts";
-import { syncToHamara } from "../../../integration/hamaraSync.ts";
+} from "../../../utils/gamruService.ts";
+import { syncToGamru } from "../../../integration/gamruSync.ts";
+import { logger } from "../../../utils/logger.ts";
 
 interface RegisterInput {
   first_name: string;
@@ -53,7 +54,13 @@ export const registerService = async (input: RegisterInput) => {
 
   bus.emit(EVENTS.USER_REGISTERED, { userId: user.id, email: user.email });
 
-  await createHamaraEngageUser({
+  // Mirror the new user into gamru. gamru's `/users/add` also creates
+  // the matching Player row (see gamru user.service.ts → createPlayerService),
+  // so a single call covers both tables. We don't fail registration if
+  // gamru is down — the local account still works — but we DO log
+  // loudly so an operator can spot a misconfigured client_auth_key or a
+  // disabled client immediately.
+  const gamruRes = await createGamruUser({
     first_name: input.first_name,
     last_name: input.last_name,
     email: input.email,
@@ -64,11 +71,25 @@ export const registerService = async (input: RegisterInput) => {
     status: "ACTIVE",
   });
 
-  // Link the gamify user to its hamara mirror player (by email) so
+  if (!gamruRes.ok) {
+    logger.error("❌ Gamru user/player mirror creation failed", {
+      email: input.email,
+      status: gamruRes.status,
+      error: gamruRes.error,
+      body: gamruRes.body,
+    });
+  } else {
+    logger.info("✅ Gamru user/player mirror created", {
+      email: input.email,
+      status: gamruRes.status,
+    });
+  }
+
+  // Link the gamify user to its gamru mirror player (by email) so
   // subsequent XP syncs land on the right profile. Fire-and-forget;
   // runs after the awaited mirror-user creation above so the player
   // already exists for email linking.
-  void syncToHamara({
+  void syncToGamru({
     event_id: `USER_REGISTERED:${user.id}`,
     event_type: "USER_REGISTERED",
     external_id: user.id,

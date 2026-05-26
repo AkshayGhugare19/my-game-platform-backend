@@ -1,10 +1,10 @@
 import { AppError } from "../../../utils/AppError.ts";
 import { logger } from "../../../utils/logger.ts";
 import type {
-  HamaraUserProfileData,
-  HamaraLevelTier,
-} from "../../../utils/hamaraEngageService.ts";
-import { hamaraUserProfileData } from "../../../utils/hamaraEngageService.ts";
+  GamruUserProfileData,
+  GamruLevelTier,
+} from "../../../utils/gamruService.ts";
+import { gamruUserProfileData } from "../../../utils/gamruService.ts";
 import UserRepository from "../../user/model/user.repository.ts";
 
 interface ProfileUser {
@@ -56,7 +56,7 @@ export interface LevelTier {
   state: "completed" | "current" | "locked";
 }
 
-/** A rank tier as defined in Hamara (simplified for the client). */
+/** A rank tier as defined in Gamru (simplified for the client). */
 export interface RankTier {
   id: string;
   code: string;
@@ -115,12 +115,12 @@ const titleCase = (s: string): string =>
     .trim()
     .replace(/\b\w/g, (c) => c.toUpperCase());
 
-const fetchHamara = async (
+const fetchGamru = async (
   email: string
-): Promise<HamaraUserProfileData | null> => {
-  const res = await hamaraUserProfileData(email);
+): Promise<GamruUserProfileData | null> => {
+  const res = await gamruUserProfileData(email);
   if (!res.ok || !res.body) {
-    logger.warn("Hamara profile unavailable; serving local fallback", {
+    logger.warn("Gamru profile unavailable; serving local fallback", {
       email,
       status: res.status,
       error: res.error,
@@ -131,7 +131,7 @@ const fetchHamara = async (
 };
 
 /**
- * Progress *within the current level band*. When Hamara gives us the
+ * Progress *within the current level band*. When Gamru gives us the
  * `levels` roadmap we anchor to the real `xp_start`/`xp_end` of the
  * level (so e.g. 150 XP at level 2 of a 100–200 band reads as 50/100,
  * not 75%). Without the roadmap we fall back to the flat
@@ -142,7 +142,7 @@ const buildProgress = (
   xpTotal: number,
   xpToNext: number,
   isMaxLevel: boolean,
-  levels: HamaraLevelTier[]
+  levels: GamruLevelTier[]
 ): LevelProgress => {
   const band = levels.find((l) => Number(l.level) === level);
   if (band) {
@@ -184,12 +184,12 @@ export const getProfile = async (
   const user = await UserRepository.findOne({ email });
   if (!user) throw new AppError("User not found", 404);
 
-  const userDataRes = await fetchHamara(email);
+  const userDataRes = await fetchGamru(email);
   const g = userDataRes?.gamification;
   const progress = g?.progress;
 
   // `gamification.progress` is the authoritative snapshot; fall back to
-  // the flat top-level fields, then to safe zeroes (Hamara may be down).
+  // the flat top-level fields, then to safe zeroes (Gamru may be down).
   const xpTotal = Number(progress?.xp_points ?? userDataRes?.xp_points ?? 0);
   const level = Number(progress?.level ?? userDataRes?.level ?? 1);
   const maxLevel = Number(
@@ -234,7 +234,7 @@ export const getProfile = async (
       }
     : EMPTY_RANK;
 
-  const levelTiers: HamaraLevelTier[] = Array.isArray(g?.levels)
+  const levelTiers: GamruLevelTier[] = Array.isArray(g?.levels)
     ? g!.levels!
     : [];
   const levels: LevelTier[] = levelTiers
@@ -299,7 +299,7 @@ export const getXpHistory = async (
   page: number,
   limit: number
 ): Promise<PaginatedXpHistory> => {
-  const userDataRes = await fetchHamara(email);
+  const userDataRes = await fetchGamru(email);
   const rows = Array.isArray(userDataRes?.xp_history) ? userDataRes!.xp_history! : [];
 
   const total = rows.length;

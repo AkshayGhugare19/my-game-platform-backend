@@ -1,6 +1,6 @@
 import env from "../config/env.ts";
 import { logger } from "./logger.ts";
-export interface HamaraEngageUserPayload {
+export interface GamruUserPayload {
   first_name: string;
   last_name: string;
   email: string;
@@ -11,7 +11,7 @@ export interface HamaraEngageUserPayload {
   status: string;
 }
 
-export interface HamaraEngageResult<T = unknown> {
+export interface GamruResult<T = unknown> {
   ok: boolean;
   status?: number;
   body?: T;
@@ -19,7 +19,7 @@ export interface HamaraEngageResult<T = unknown> {
 }
 
 /** `gamification.progress` — the player's current level snapshot. */
-export interface HamaraGamificationProgress {
+export interface GamruGamificationProgress {
   level?: number;
   rank_name?: string;
   xp_points?: number;
@@ -28,7 +28,7 @@ export interface HamaraGamificationProgress {
 }
 
 /** `gamification.next_rank` — the rank the player is climbing toward. */
-export interface HamaraNextRank {
+export interface GamruNextRank {
   rank_name?: string;
   level?: number;
   xp_required?: number;
@@ -38,7 +38,7 @@ export interface HamaraNextRank {
 }
 
 /** One entry of `gamification.levels` — a single level band. */
-export interface HamaraLevelTier {
+export interface GamruLevelTier {
   rank_name?: string;
   level?: number;
   xp_start?: number;
@@ -48,7 +48,7 @@ export interface HamaraLevelTier {
 }
 
 /** One entry of `gamification.logs` — an audited gamification action. */
-export interface HamaraGamificationLog {
+export interface GamruGamificationLog {
   id: string;
   player_id?: string;
   action: string;
@@ -59,29 +59,29 @@ export interface HamaraGamificationLog {
 }
 
 /**
- * The nested `gamification` object Hamara attaches to a player on
- * `POST /players/by-email`. Every field is optional — Hamara is the
+ * The nested `gamification` object Gamru attaches to a player on
+ * `POST /players/by-email`. Every field is optional — Gamru is the
  * source of truth but may be unreachable or partially populated.
  */
-export interface HamaraGamification {
-  progress?: HamaraGamificationProgress;
-  next_rank?: HamaraNextRank | null;
-  levels?: HamaraLevelTier[];
+export interface GamruGamification {
+  progress?: GamruGamificationProgress;
+  next_rank?: GamruNextRank | null;
+  levels?: GamruLevelTier[];
   ranks?: Array<Record<string, unknown>>;
   missions?: unknown[];
   mission_bundles?: unknown[];
   reward_shop?: unknown[];
   rewards?: unknown[];
-  logs?: HamaraGamificationLog[];
+  logs?: GamruGamificationLog[];
 }
 
 /**
- * Shape of the gamification profile a player carries in Hamara Engage.
- * These mirror the actual Hamara `players` payload (snake_case). Every
- * field is optional — Hamara is the source of truth but may be
+ * Shape of the gamification profile a player carries in Gamru.
+ * These mirror the actual Gamru `players` payload (snake_case). Every
+ * field is optional — Gamru is the source of truth but may be
  * unreachable or partially populated, so callers must fall back safely.
  */
-export interface HamaraUserProfileData {
+export interface GamruUserProfileData {
   id?: string;
   external_id?: string;
   player_id?: string;
@@ -93,7 +93,7 @@ export interface HamaraUserProfileData {
   status?: string;
   gamification_active?: boolean;
 
-  /** Gamification fields as Hamara actually returns them. */
+  /** Gamification fields as Gamru actually returns them. */
   level?: number;
   max_level?: number;
   xp_points?: number;
@@ -106,7 +106,7 @@ export interface HamaraUserProfileData {
    * ranks, logs, …). Present on the `by-email` player fetch; absent on
    * leaner payloads, so treat as optional.
    */
-  gamification?: HamaraGamification;
+  gamification?: GamruGamification;
 
   /** Optional XP ledger (absent on the basic player payload). */
   xp_history?: Array<{
@@ -121,13 +121,13 @@ export interface HamaraUserProfileData {
 }
 
 /**
- * Shape of the data Hamara Engage returns from
+ * Shape of the data Gamru returns from
  * `POST /players/by-email/add-xp` — the player's gamification snapshot
- * after the XP has been applied. Every field is optional: Hamara is the
+ * after the XP has been applied. Every field is optional: Gamru is the
  * source of truth but may be unreachable or only partially populated, so
  * callers must fall back safely.
  */
-export interface HamaraAddXpPointUserResponse {
+export interface GamruAddXpPointUserResponse {
   id?: string;
   external_id?: string;
   player_id?: string;
@@ -139,7 +139,7 @@ export interface HamaraAddXpPointUserResponse {
   xp_to_next?: number;
   rank_name?: string;
   tokens?: number;
-  /** XP just applied by this call, when Hamara echoes it back. */
+  /** XP just applied by this call, when Gamru echoes it back. */
   xp_added?: number;
   [key: string]: unknown;
 }
@@ -157,7 +157,7 @@ const buildUrl = (
   path: string,
   query?: RequestOptions["query"]
 ): string => {
-  const url = `${env.hamaraEngage.baseUrl}${path}`;
+  const url = `${env.gamru.baseUrl}${path}`;
   if (!query) return url;
   const qs = Object.entries(query)
     .filter(([, v]) => v !== undefined && v !== null && v !== "")
@@ -169,23 +169,68 @@ const buildUrl = (
   return qs ? `${url}?${qs}` : url;
 };
 
+/**
+ * Module-level snapshot of how gamru currently sees this game platform's
+ * client_auth_key. Updated by `verifyGamruClient` at boot and by every
+ * subsequent response, mostly for logging/visibility. Gamru is the live
+ * source of truth — every outbound request still goes to gamru and the
+ * real 401/403 response is what surfaces to the caller. We do NOT
+ * short-circuit on a cached DISABLED/INVALID_KEY because doing so makes
+ * the cache impossible to recover from (no further response = no signal
+ * to flip the flag back to ENABLED).
+ */
+export type GamruClientStatus =
+  | "UNKNOWN"
+  | "ENABLED"
+  | "DISABLED"
+  | "INVALID_KEY";
+
+let gamruClientStatus: GamruClientStatus = "UNKNOWN";
+
+export const setGamruClientStatus = (next: GamruClientStatus): void => {
+  if (gamruClientStatus !== next) {
+    logger.info(
+      `Gamru client status transition: ${gamruClientStatus} → ${next}`
+    );
+  }
+  gamruClientStatus = next;
+};
+
+export const getGamruClientStatus = (): GamruClientStatus => gamruClientStatus;
+
 export const request = async <T = unknown>(
   method: HttpMethod,
   path: string,
   options: RequestOptions = {}
-): Promise<HamaraEngageResult<T>> => {
+): Promise<GamruResult<T>> => {
+  // Hard guard: refuse to even attempt a call without the per-client API
+  // key. env.ts already enforces this at boot via `required()`, but a
+  // defensive in-process check makes the failure unambiguous if someone
+  // mutates env at runtime or imports this file in a script context.
+  if (!env.gamru.clientAuthKey) {
+    const message =
+      "GAMRU_CLIENT_AUTH_KEY is not configured — refusing to call gamru without a per-client auth key";
+    logger.error(message, { method, path });
+    return { ok: false, error: message };
+  }
+
   const url = buildUrl(path, options.query);
   const controller = new AbortController();
   const timer = setTimeout(
     () => controller.abort(),
-    env.hamaraEngage.timeoutMs
+    env.gamru.timeoutMs
   );
 
   try {
-    const headers: Record<string, string> = {};
-    // Attach service key for service-to-service calls when configured
-    if (env.hamaraEngage.serviceKey) {
-      headers["x-service-key"] = env.hamaraEngage.serviceKey;
+    const headers: Record<string, string> = {
+      // Multi-client identity: the per-client API key from gamru's
+      // `clientConfig` row. Required by gamru's `clientAuth` middleware
+      // on every endpoint this service calls.
+      "x-client-auth-key": env.gamru.clientAuthKey,
+    };
+    // Optional defence-in-depth: shared service key for s2s calls.
+    if (env.gamru.serviceKey) {
+      headers["x-service-key"] = env.gamru.serviceKey;
     }
     const hasBody =
       options.data !== undefined && method !== "GET" && method !== "DELETE";
@@ -208,18 +253,44 @@ export const request = async <T = unknown>(
     }
 
     if (!res.ok) {
-      logger.warn("Hamara Engage request failed", {
+      // Cache auth-rejection verdicts so the next call can short-circuit.
+      // 403 with the literal gamru clientAuth message → client is disabled.
+      // 401 from any path → key is missing/unknown server-side.
+      const bodyMessage =
+        body && typeof body === "object" && body !== null && "message" in body
+          ? String((body as { message?: unknown }).message ?? "")
+          : "";
+
+      if (res.status === 403 && /disabled/i.test(bodyMessage)) {
+        setGamruClientStatus("DISABLED");
+      } else if (res.status === 401) {
+        setGamruClientStatus("INVALID_KEY");
+      }
+
+      logger.warn("Gamru request failed", {
         method,
         url,
         status: res.status,
         body,
       });
-      return { ok: false, status: res.status, body: body as T };
+      return {
+        ok: false,
+        status: res.status,
+        body: body as T,
+        error: bodyMessage || undefined,
+      };
+    }
+
+    // Any successful auth-bearing response is proof the client is alive
+    // again — recover from a stale DISABLED/INVALID_KEY if an admin just
+    // re-enabled us.
+    if (gamruClientStatus !== "ENABLED") {
+      setGamruClientStatus("ENABLED");
     }
     return { ok: true, status: res.status, body: body as T };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    logger.error("Hamara Engage request errored", {
+    logger.error("Gamru request errored", {
       method,
       url,
       error: message,
@@ -264,7 +335,7 @@ const del = <T = unknown>(path: string, token?: string) =>
 type Q = RequestOptions["query"];
 
 
-export const hamaraEngage = {
+export const gamru = {
   /** /api/auth */
   auth: {
     register: (data: unknown) => post("/auth/register", data),
@@ -275,7 +346,7 @@ export const hamaraEngage = {
 
   /** /api/users */
   users: {
-    add: (data: HamaraEngageUserPayload | unknown) =>
+    add: (data: GamruUserPayload | unknown) =>
       post("/users/add", data),
     updateById: (id: string, data: unknown, token?: string) =>
       post(`/users/update-by/${id}`, data, token),
@@ -678,27 +749,27 @@ export const hamaraEngage = {
   },
 };
 
-export const createHamaraEngageUser = (
-  payload: HamaraEngageUserPayload
-): Promise<HamaraEngageResult> => hamaraEngage.users.add(payload);
+export const createGamruUser = (
+  payload: GamruUserPayload
+): Promise<GamruResult> => gamru.users.add(payload);
 
-export const getHamaraEngageUser = (
+export const getGamruUser = (
   userId: string,
   token?: string
-): Promise<HamaraEngageResult> => hamaraEngage.players.getById(userId, token);
+): Promise<GamruResult> => gamru.players.getById(userId, token);
 
 
-export const hamaraUserProfileData = async (
+export const gamruUserProfileData = async (
   email: string,
   token?: string
-): Promise<HamaraEngageResult<HamaraUserProfileData>> => {
-  const res = await hamaraEngage.players.getByEmail(email );
-  if (!res.ok) return res as HamaraEngageResult<HamaraUserProfileData>;
+): Promise<GamruResult<GamruUserProfileData>> => {
+  const res = await gamru.players.getByEmail(email );
+  if (!res.ok) return res as GamruResult<GamruUserProfileData>;
 
   const raw = res.body as Record<string, unknown> | null | undefined;
   const unwrapped = raw && typeof raw === "object" && "data" in raw ? raw.data : raw;
   const profile = (unwrapped ?? undefined) as
-    | HamaraUserProfileData
+    | GamruUserProfileData
     | undefined;
 
   return {
@@ -710,25 +781,25 @@ export const hamaraUserProfileData = async (
 };
 
 /**
- * Apply XP to a Hamara player by email and return the unwrapped
- * gamification snapshot. Hamara wraps payloads in `{ success, message,
- * data }`; this peels the envelope to a flat `HamaraAddXpPointUserResponse`.
- * Never throws — on a Hamara outage it resolves with `ok:false`, so
+ * Apply XP to a Gamru player by email and return the unwrapped
+ * gamification snapshot. Gamru wraps payloads in `{ success, message,
+ * data }`; this peels the envelope to a flat `GamruAddXpPointUserResponse`.
+ * Never throws — on a Gamru outage it resolves with `ok:false`, so
  * callers can degrade gracefully without breaking gameplay.
  */
-export const hamaraAddXpPoints = async (
+export const gamruAddXpPoints = async (
   email: string,
   amount: number
-): Promise<HamaraEngageResult<HamaraAddXpPointUserResponse>> => {
-  const res = await hamaraEngage.players.addXpPoints(email, amount);
-  console.log("Hamara addXpPoints response>>", { email, amount, res });
-  if (!res.ok) return res as HamaraEngageResult<HamaraAddXpPointUserResponse>;
+): Promise<GamruResult<GamruAddXpPointUserResponse>> => {
+  const res = await gamru.players.addXpPoints(email, amount);
+  console.log("Gamru addXpPoints response>>", { email, amount, res });
+  if (!res.ok) return res as GamruResult<GamruAddXpPointUserResponse>;
 
   const raw = res.body as Record<string, unknown> | null | undefined;
   const unwrapped =
     raw && typeof raw === "object" && "data" in raw ? raw.data : raw;
   const data = (unwrapped ?? undefined) as
-    | HamaraAddXpPointUserResponse
+    | GamruAddXpPointUserResponse
     | undefined;
 
   return {
@@ -745,4 +816,4 @@ export const deriveUsername = (email: string): string =>
     .replace(/[^a-zA-Z0-9._-]/g, "")
     .toLowerCase() || `user${Date.now()}`;
 
-export default hamaraEngage;
+export default gamru;

@@ -2,7 +2,7 @@ import env from "../config/env.ts";
 import { logger } from "../utils/logger.ts";
 
 /**
- * Lightweight one-way push of gamification events to hamara-engage-backend.
+ * Lightweight one-way push of gamification events to gamru-backend.
  *
  * Fire-and-forget: a sync failure must never break gameplay/registration.
  * Idempotency is the receiver's job (gam_xp_transactions UNIQUE event_id),
@@ -15,7 +15,7 @@ export type SyncEventType =
   | "LEVEL_UP"
   | "RANK_UP";
 
-export interface HamaraSyncEvent {
+export interface GamruSyncEvent {
   event_id: string;
   event_type: SyncEventType;
   external_id: string;
@@ -24,35 +24,42 @@ export interface HamaraSyncEvent {
   meta?: Record<string, unknown>;
 }
 
-export const syncToHamara = async (
-  event: HamaraSyncEvent
-): Promise<void> => {
-  const url = `${env.hamaraEngage.baseUrl}/integration/events`;
+export const syncToGamru = async (event: GamruSyncEvent): Promise<void> => {
+  // Hard guard: without the per-client key gamru will 401 us anyway,
+  // and the sync is fire-and-forget so the caller never sees a thrown
+  // error. Log loudly and bail.
+  if (!env.gamru.clientAuthKey) {
+    logger.error(
+      "syncToGamru skipped — GAMRU_CLIENT_AUTH_KEY is not configured",
+      { event_id: event.event_id, type: event.event_type }
+    );
+    return;
+  }
+
+  const url = `${env.gamru.baseUrl}/integration/events`;
   const controller = new AbortController();
-  const timer = setTimeout(
-    () => controller.abort(),
-    env.hamaraEngage.timeoutMs
-  );
+  const timer = setTimeout(() => controller.abort(), env.gamru.timeoutMs);
 
   try {
     const res = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-service-key": env.hamaraEngage.serviceKey,
+        "x-service-key": env.gamru.serviceKey,
+        "x-client-auth-key": env.gamru.clientAuthKey,
       },
       body: JSON.stringify({ origin: "gamify", ...event }),
       signal: controller.signal,
     });
     if (!res.ok) {
-      logger.warn("Hamara sync rejected", {
+      logger.warn("Gamru sync rejected", {
         event_id: event.event_id,
         type: event.event_type,
         status: res.status,
       });
     }
   } catch (err) {
-    logger.error("Hamara sync failed", {
+    logger.error("Gamru sync failed", {
       event_id: event.event_id,
       type: event.event_type,
       error: err instanceof Error ? err.message : String(err),

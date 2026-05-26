@@ -8,6 +8,7 @@ import { registerEventHandlers } from "./events/registerHandlers.ts";
 import { initSocket } from "./realtime/socket.ts";
 import { startCronJobs } from "./jobs/index.ts";
 import { logger } from "./utils/logger.ts";
+import { verifyGamruClient } from "./integration/verifyGamruClient.ts";
 
 const startServer = async (): Promise<void> => {
   try {
@@ -26,6 +27,13 @@ const startServer = async (): Promise<void> => {
     server.listen(env.port, () => {
       logger.info(`🚀 Server on http://localhost:${env.port}`);
       logger.info(`📚 Swagger: http://localhost:${env.port}/api/docs`);
+    });
+
+    // Fire-and-forget boot check — verifies the GAMRU_CLIENT_AUTH_KEY
+    // resolves to a valid, ENABLED client. Logs the identity on success
+    // or a clear error on misconfig. A gamru outage is never fatal.
+    verifyGamruClient().catch((err) => {
+      logger.warn("Gamru client verification crashed", { err });
     });
   } catch (error) {
     logger.error("❌ Server startup failed", { error });
