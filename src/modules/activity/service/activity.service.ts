@@ -71,7 +71,17 @@ export const recordActivity = async (input: RecordActivityInput) => {
       const u = await UserRepository.findByPk(userId);
       const email = u?.email ?? null;
       if (email) {
-        const xpRes = await gamruAddXpPoints(email, xpAmount);
+        // Forward game metadata so gamru can build the player's
+        // casino personalization (category/provider mix + favorites).
+        const m = (meta ?? {}) as Record<string, unknown>;
+        const game = {
+          id: gameId ?? null,
+          name: (m.name as string | undefined) ?? (m.game as string | undefined) ?? null,
+          category: (m.category as string | undefined) ?? null,
+          provider: (m.provider as string | undefined) ?? null,
+          turnover: typeof m.bet === "number" ? (m.bet as number) : (amount ?? 0),
+        };
+        const xpRes = await gamruAddXpPoints(email, xpAmount, game);
         console.log("Gamru add XP response:", xpRes);
 
         if (xpRes.ok && xpRes.body) {

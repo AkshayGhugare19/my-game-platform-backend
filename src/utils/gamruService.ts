@@ -127,6 +127,20 @@ export interface GamruUserProfileData {
  * source of truth but may be unreachable or only partially populated, so
  * callers must fall back safely.
  */
+/**
+ * Optional per-play game metadata pushed alongside an XP delta. Gamru
+ * uses it to aggregate the player's casino personalization view
+ * (game category / provider mix and favorite games).
+ */
+export interface GamruAddXpGame {
+  id?: string | null;
+  name?: string | null;
+  category?: string | null;
+  provider?: string | null;
+  /** Bet size for this round — feeds the turnover totals. */
+  turnover?: number | null;
+}
+
 export interface GamruAddXpPointUserResponse {
   id?: string;
   external_id?: string;
@@ -720,8 +734,12 @@ export const gamru = {
       get(`/players/${id}`, undefined, token),
     getByEmail: (email: string) =>
       post(`/players/by-email`, { email }),
-    addXpPoints: (email: string, amount: number) =>
-      post(`/players/by-email/add-xp`, { email, amount }),
+    addXpPoints: (
+      email: string,
+      amount: number,
+      game?: GamruAddXpGame
+    ) =>
+      post(`/players/by-email/add-xp`, { email, amount, game }),
     updateById: (id: string, data: unknown, token: string) =>
       post(`/players/update-by/${id}`, data, token),
     deleteById: (id: string, token: string) =>
@@ -789,9 +807,10 @@ export const gamruUserProfileData = async (
  */
 export const gamruAddXpPoints = async (
   email: string,
-  amount: number
+  amount: number,
+  game?: GamruAddXpGame
 ): Promise<GamruResult<GamruAddXpPointUserResponse>> => {
-  const res = await gamru.players.addXpPoints(email, amount);
+  const res = await gamru.players.addXpPoints(email, amount, game);
   console.log("Gamru addXpPoints response>>", { email, amount, res });
   if (!res.ok) return res as GamruResult<GamruAddXpPointUserResponse>;
 
