@@ -750,6 +750,8 @@ export const gamru = {
       get(`/players/${id}/rewards`, query, token),
     addReward: (id: string, data: unknown, token: string) =>
       post(`/players/${id}/rewards`, data, token),
+    claimReward: (playerId: string, rewardId: string) =>
+      post(`/players/${playerId}/rewards/${rewardId}/claim`, {}),
     logs: (id: string, query: Q, token: string) =>
       get(`/players/${id}/logs`, query, token),
   },
