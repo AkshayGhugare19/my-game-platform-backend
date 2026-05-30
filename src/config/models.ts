@@ -17,6 +17,7 @@ import "../modules/achievement/model/achievement.model.ts";
 import "../modules/achievement/model/user-achievement.model.ts";
 import "../modules/notification/model/notification.model.ts";
 import "../modules/audit/model/audit-log.model.ts";
+import "../modules/wallet/model/wallet.model.ts";
 
 export const registerModels = (): void => {
   /* side-effect imports above register all models */

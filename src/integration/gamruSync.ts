@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import env from "../config/env.ts";
 import { logger } from "../utils/logger.ts";
 
@@ -13,7 +14,8 @@ export type SyncEventType =
   | "USER_REGISTERED"
   | "XP_AWARDED"
   | "LEVEL_UP"
-  | "RANK_UP";
+  | "RANK_UP"
+  | "DEPOSIT_MADE";
 
 export interface GamruSyncEvent {
   event_id: string;
@@ -67,4 +69,25 @@ export const syncToGamru = async (event: GamruSyncEvent): Promise<void> => {
   } finally {
     clearTimeout(timer);
   }
+};
+
+/**
+ * DEPOSIT_MADE — fire right after a wallet deposit succeeds. Gamru uses it to
+ * move the player out of the "no_deposit" segment and into "depositor". Each
+ * deposit is a distinct event (random event_id) so repeat deposits all apply.
+ */
+export const syncDepositMade = (
+  externalId: string,
+  amount: number,
+  email?: string | null,
+  meta?: Record<string, unknown>
+): void => {
+  void syncToGamru({
+    event_id: `DEPOSIT_MADE:${externalId}:${randomUUID()}`,
+    event_type: "DEPOSIT_MADE",
+    external_id: externalId,
+    email,
+    amount,
+    meta,
+  });
 };
