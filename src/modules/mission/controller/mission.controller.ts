@@ -7,14 +7,16 @@ import {
   claimMission,
 } from "../service/mission.engine.ts";
 import MissionRepository from "../model/mission.repository.ts";
+import { readPageParams, paginateArray } from "../../../utils/pagination.ts";
 
 export const getMyMissions = async (
   req: AuthRequest,
   res: Response
 ): Promise<void> => {
   try {
-    const data = await listUserMissions(req.user!.id);
-    successResponse(res, 200, "Missions", data);
+    const { page, limit } = readPageParams(req.query);
+    const all = await listUserMissions(req.user!.id);
+    successResponse(res, 200, "Missions", paginateArray(all, page, limit));
   } catch {
     errorResponse(res, 500, "Failed to load missions");
   }

@@ -76,17 +76,38 @@ const periodPosition = async (
   return { rank: Number(ahead[0]?.c ?? 0) + 1, score };
 };
 
+/** Total ranked players (distinct users with any XP) in the window. */
+const periodCount = async (start: Date): Promise<number> => {
+  const res = await sequelize.query<{ c: string }>(
+    `SELECT COUNT(*)::int AS c FROM (
+        SELECT user_id FROM xp_history
+        WHERE created_at >= :start
+        GROUP BY user_id
+     ) t`,
+    { replacements: { start }, type: QueryTypes.SELECT }
+  );
+  return Number(res[0]?.c ?? 0);
+};
+
 export const getBoard = async (
   board: Board,
   limit: number,
   offset: number,
   meUserId?: string
-): Promise<{ board: string; rows: Row[]; me: Row | null }> => {
+): Promise<{
+  board: string;
+  rows: Row[];
+  me: Row | null;
+  pagination: { total: number; page: number; limit: number; totalPages: number };
+}> => {
   let me: Row | null = null;
 
   // global = all-time window (epoch start); weekly/monthly = period window.
   const start = periodStart(board) ?? new Date(0);
-  const rows = await periodRows(start, limit, offset);
+  const [rows, total] = await Promise.all([
+    periodRows(start, limit, offset),
+    periodCount(start),
+  ]);
   if (meUserId) {
     const pos = await periodPosition(start, meUserId);
     if (pos) me = { rank: pos.rank, userId: meUserId, score: pos.score };
@@ -94,7 +115,17 @@ export const getBoard = async (
 
   await hydrateNames(rows);
   if (me) await hydrateNames([me]);
-  return { board, rows, me };
+  return {
+    board,
+    rows,
+    me,
+    pagination: {
+      total,
+      page: Math.floor(offset / limit) + 1,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    },
+  };
 };
 
 export const myPositions = async (userId: string) => {

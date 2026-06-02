@@ -22,6 +22,20 @@ class RewardPurchaseRepository {
     });
   }
 
+  /** Paginated purchase history for one user (newest first). */
+  paginateByUser(
+    userId: string,
+    page: number,
+    limit: number
+  ): Promise<{ rows: RewardPurchase[]; count: number }> {
+    return RewardPurchase.findAndCountAll({
+      where: { user_id: userId },
+      order: [["created_at", "DESC"]],
+      limit,
+      offset: (page - 1) * limit,
+    });
+  }
+
   /** Flip any ACTIVE boosters that have passed their expiry to EXPIRED. */
   async expireStale(userId: string, now: Date): Promise<void> {
     await RewardPurchase.update(

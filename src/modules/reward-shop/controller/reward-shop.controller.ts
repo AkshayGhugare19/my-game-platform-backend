@@ -3,6 +3,7 @@ import type { AuthRequest } from "../../../types/request.type.ts";
 import { successResponse, errorResponse } from "../../../utils/responseHandler.ts";
 import { AppError } from "../../../utils/AppError.ts";
 import UserRepository from "../../user/model/user.repository.ts";
+import { readPageParams } from "../../../utils/pagination.ts";
 import {
   getProducts,
   buyProduct,
@@ -27,7 +28,8 @@ export const listProducts = async (
 ): Promise<void> => {
   try {
     const email = await requireEmail(req.user!.id);
-    const data = await getProducts(email);
+    const { page, limit } = readPageParams(req.query, 12);
+    const data = await getProducts(email, page, limit);
     successResponse(res, 200, "Reward shop products", data);
   } catch (e) {
     fail(res, e, "Failed to load reward shop");
@@ -54,7 +56,8 @@ export const history = async (
   res: Response
 ): Promise<void> => {
   try {
-    const data = await getHistory(req.user!.id);
+    const { page, limit } = readPageParams(req.query);
+    const data = await getHistory(req.user!.id, page, limit);
     successResponse(res, 200, "Shop history", data);
   } catch (e) {
     fail(res, e, "Failed to load shop history");
@@ -66,7 +69,8 @@ export const boosters = async (
   res: Response
 ): Promise<void> => {
   try {
-    const data = await getBoosters(req.user!.id);
+    const { page, limit } = readPageParams(req.query, 12);
+    const data = await getBoosters(req.user!.id, page, limit);
     successResponse(res, 200, "My boosters", data);
   } catch (e) {
     fail(res, e, "Failed to load boosters");

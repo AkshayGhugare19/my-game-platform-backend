@@ -76,7 +76,9 @@ export const list = async (
     const unread = req.query.unread === "true";
     const data = await listNotifications(req.user!.id, page, limit, unread);
 
-    const user = await UserRepository.findByPk(req.user!.id);
+    // Virtual pending-reward rows only belong on the first page; on later
+    // pages they'd duplicate, so skip the lookup entirely past page 1.
+    const user = page === 1 ? await UserRepository.findByPk(req.user!.id) : null;
     const pending = user?.email
       ? await pendingRewardNotifications(user.email)
       : [];

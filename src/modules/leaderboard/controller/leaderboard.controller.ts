@@ -2,13 +2,14 @@ import type { Response } from "express";
 import type { AuthRequest } from "../../../types/request.type.ts";
 import { successResponse, errorResponse } from "../../../utils/responseHandler.ts";
 import { getBoard, myPositions } from "../service/leaderboard.service.ts";
+import { readPageParams } from "../../../utils/pagination.ts";
 
 const board =
   (which: "global" | "weekly" | "monthly") =>
   async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-      const limit = Math.min(Number(req.query.limit) || 20, 100);
-      const offset = Number(req.query.offset) || 0;
+      const { page, limit } = readPageParams(req.query, 20);
+      const offset = (page - 1) * limit;
       const data = await getBoard(which, limit, offset, req.user!.id);
       successResponse(res, 200, `${which} leaderboard`, data);
     } catch {

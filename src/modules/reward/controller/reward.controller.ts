@@ -7,6 +7,7 @@ import UserRewardRepository from "../model/user-reward.repository.ts";
 import { claimReward as claimLocalReward } from "../service/reward.engine.ts";
 import UserRepository from "../../user/model/user.repository.ts";
 import { gamru, gamruUserProfileData } from "../../../utils/gamruService.ts";
+import { readPageParams, paginateArray } from "../../../utils/pagination.ts";
 
 interface GamruRewardRow {
   id?: string;
@@ -26,6 +27,7 @@ export const getMyRewards = async (
 ): Promise<void> => {
   try {
     const status = (req.query.status as string) || undefined;
+    const { page, limit } = readPageParams(req.query);
     // Gamru is the source of truth for mission/level/manual rewards.
     // Fall back to the local table if gamru is unreachable so the page
     // still renders something instead of an empty state on a transient blip.
@@ -38,11 +40,11 @@ export const getMyRewards = async (
             (r) => String(r.status ?? "").toUpperCase() === status.toUpperCase()
           )
         : rows;
-      successResponse(res, 200, "My rewards", filtered);
+      successResponse(res, 200, "My rewards", paginateArray(filtered, page, limit));
       return;
     }
     const data = await UserRewardRepository.listByUser(req.user!.id, status);
-    successResponse(res, 200, "My rewards", data);
+    successResponse(res, 200, "My rewards", paginateArray(data, page, limit));
   } catch {
     errorResponse(res, 500, "Failed to load rewards");
   }

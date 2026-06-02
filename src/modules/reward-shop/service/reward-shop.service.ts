@@ -4,6 +4,10 @@ import {
   gamru,
   gamruUserProfileData,
 } from "../../../utils/gamruService.ts";
+import {
+  paginateArray,
+  type Paginated,
+} from "../../../utils/pagination.ts";
 import RewardPurchaseRepository from "../model/reward-purchase.repository.ts";
 import type RewardPurchase from "../model/reward-purchase.model.ts";
 
@@ -282,19 +286,18 @@ const loadGamruSlice = async (email: string): Promise<GamruProfileSlice> => {
   };
 };
 
-export interface RewardShopCatalog {
+export interface RewardShopCatalog extends Paginated<RewardProduct> {
   tokens: number;
-  products: RewardProduct[];
 }
 
-export const getProducts = async (email: string): Promise<RewardShopCatalog> => {
+export const getProducts = async (
+  email: string,
+  page = 1,
+  limit = 12
+): Promise<RewardShopCatalog> => {
   const { tokens, catalog } = await loadGamruSlice(email);
-  return {
-    tokens,
-    products: catalog
-      .filter((r) => r.id)
-      .map((r) => normalize(r, tokens)),
-  };
+  const products = catalog.filter((r) => r.id).map((r) => normalize(r, tokens));
+  return { tokens, ...paginateArray(products, page, limit) };
 };
 
 export interface BuyResult {
@@ -388,16 +391,40 @@ export const buyProduct = async (
   };
 };
 
-export const getHistory = async (userId: string): Promise<PurchaseView[]> => {
-  const rows = await RewardPurchaseRepository.listByUser(userId);
-  return rows.map(toPurchaseView);
+export const getHistory = async (
+  userId: string,
+  page = 1,
+  limit = 10
+): Promise<Paginated<PurchaseView>> => {
+  const { rows, count } = await RewardPurchaseRepository.paginateByUser(
+    userId,
+    page,
+    limit
+  );
+  return {
+    data: rows.map(toPurchaseView),
+    pagination: {
+      total: count,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(count / limit)),
+    },
+  };
 };
 
-export const getBoosters = async (userId: string): Promise<BoosterView[]> => {
+export const getBoosters = async (
+  userId: string,
+  page = 1,
+  limit = 12
+): Promise<Paginated<BoosterView>> => {
   const now = new Date();
   await RewardPurchaseRepository.expireStale(userId, now);
   const rows = await RewardPurchaseRepository.activeBoosters(userId, now);
-  return rows.map((r) => toBoosterView(r, now));
+  return paginateArray(
+    rows.map((r) => toBoosterView(r, now)),
+    page,
+    limit
+  );
 };
 
 /**
