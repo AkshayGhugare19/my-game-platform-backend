@@ -756,6 +756,15 @@ export const gamru = {
       get(`/players/${id}/logs`, query, token),
   },
 
+  /** /api/players/:id/reward-shop — token-spend purchases. */
+  rewardShop: {
+    // Atomic token-spend on a reward_shop product. clientAuth on gamru.
+    purchase: (
+      playerId: string,
+      data: { shop_item_id: string; quantity?: number }
+    ) => post(`/players/${playerId}/reward-shop/purchase`, data),
+  },
+
   /** /api/analytics */
   analytics: {
     campaigns: (query: Q, token: string) =>

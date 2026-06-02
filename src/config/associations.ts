@@ -9,6 +9,7 @@ import UserReward from "../modules/reward/model/user-reward.model.ts";
 import Achievement from "../modules/achievement/model/achievement.model.ts";
 import UserAchievement from "../modules/achievement/model/user-achievement.model.ts";
 import Notification from "../modules/notification/model/notification.model.ts";
+import RewardPurchase from "../modules/reward-shop/model/reward-purchase.model.ts";
 
 // Associations register globally on the shared Sequelize models, so this
 // must run exactly once. It is invoked from both app.ts and server.ts
@@ -57,6 +58,10 @@ export const initAssociations = (): void => {
   // Notifications
   User.hasMany(Notification, { foreignKey: "user_id", as: "notifications" });
   Notification.belongsTo(User, { foreignKey: "user_id", as: "user" });
+
+  // Reward-shop purchases (history + booster inventory)
+  User.hasMany(RewardPurchase, { foreignKey: "user_id", as: "rewardPurchases" });
+  RewardPurchase.belongsTo(User, { foreignKey: "user_id", as: "user" });
 
   // eslint-disable-next-line no-console
   console.log("✅ Associations initialized");

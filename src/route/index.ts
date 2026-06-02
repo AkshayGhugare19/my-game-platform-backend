@@ -9,6 +9,7 @@ import notificationRoutes from "./notification.routes.ts";
 import userRoutes from "./user.routes.ts";
 import profileRoutes from "./profile.routes.ts";
 import walletRoutes from "./wallet.routes.ts";
+import rewardShopRoutes from "./reward-shop.routes.ts";
 import { levelsRouter, ranksRouter, xpRouter } from "./config.routes.ts";
 import { achievementsRouter, auditRouter } from "./misc.routes.ts";
 
@@ -27,6 +28,7 @@ apiRouter.use("/notifications", notificationRoutes);
 apiRouter.use("/users", userRoutes);
 apiRouter.use("/profile", profileRoutes);
 apiRouter.use("/wallet", walletRoutes);
+apiRouter.use("/reward-shop", rewardShopRoutes);
 apiRouter.use("/levels", levelsRouter);
 apiRouter.use("/ranks", ranksRouter);
 apiRouter.use("/xp", xpRouter);

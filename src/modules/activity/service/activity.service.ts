@@ -5,6 +5,7 @@ import { awardXp } from "../../xp/service/xp.engine.ts";
 import UserRepository from "../../user/model/user.repository.ts";
 import type { GamruAddXpPointUserResponse } from "../../../utils/gamruService.ts";
 import { gamruAddXpPoints } from "../../../utils/gamruService.ts";
+import { getActiveBoostMultiplier } from "../../reward-shop/service/reward-shop.service.ts";
 import { AppError } from "../../../utils/AppError.ts";
 
 export interface RecordActivityInput {
@@ -55,7 +56,12 @@ export const recordActivity = async (input: RecordActivityInput) => {
   });
 
   let gamru: GamruAddXpPointUserResponse | null = null;
-  const xpAmount = amount ?? 0;
+  // Base XP/token delta for this play; an active reward-shop booster
+  // multiplies it before it reaches gamru (see below). Turnover (bet size)
+  // is intentionally left un-boosted.
+  const baseAmount = amount ?? 0;
+  let xpAmount = baseAmount;
+  let boostMultiplier = 1;
 
   if (!result.duplicate && result.totalXp > 0) {
     bus.emit(EVENTS.XP_AWARDED, {
@@ -66,6 +72,15 @@ export const recordActivity = async (input: RecordActivityInput) => {
     });
   }
   if (!result.duplicate) {
+    // Apply the player's strongest active booster to the earned amount so a
+    // purchased "2X" booster actually doubles what gamru awards. Best-effort:
+    // a lookup failure must never block gameplay (multiplier stays 1).
+    try {
+      boostMultiplier = await getActiveBoostMultiplier(userId);
+      if (boostMultiplier > 1) xpAmount = Math.round(baseAmount * boostMultiplier);
+    } catch {
+      boostMultiplier = 1;
+    }
     try {
       console.log("Recording activity for Gamru...", userId, xpAmount);
       const u = await UserRepository.findByPk(userId);
@@ -121,8 +136,10 @@ export const recordActivity = async (input: RecordActivityInput) => {
   return {
     duplicate: result.duplicate,
     xpAwarded,
+    // Reward-shop booster applied to this play (1 = none).
+    boostMultiplier: result.duplicate ? 1 : boostMultiplier,
     breakdown: {
-      base: xpAwarded,
+      base: result.duplicate ? 0 : baseAmount,
       streakBonus: result.streakBonus,
       dailyBonus: result.dailyBonus,
     },
