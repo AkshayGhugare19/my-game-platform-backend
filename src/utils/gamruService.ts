@@ -71,8 +71,62 @@ export interface GamruGamification {
   missions?: unknown[];
   mission_bundles?: unknown[];
   reward_shop?: unknown[];
+  tournaments?: GamruTournament[];
   rewards?: unknown[];
   logs?: GamruGamificationLog[];
+}
+
+/**
+ * A tournament as authored in Gamru (Settings → Gamification → Tournaments).
+ * Common columns are first-class; the multi-step wizard's fields live in the
+ * JSONB `data` blob, so every `data` field is optional.
+ */
+export interface GamruTournamentData {
+  large_image?: string;
+  small_image?: string;
+  industry?: "Casino" | "Sports" | string;
+  tournament_type?: string;
+  /** Game route keys on the games platform (e.g. ["lucky-spinner"]). */
+  games?: string[];
+  /** Legacy single-game field; superseded by `games`. */
+  game?: string;
+  period?: string;
+  min_bet?: number | string;
+  max_bets?: number | string;
+  buy_in?: number | string;
+  opt_in?: boolean;
+  start_date?: string;
+  end_date?: string;
+  leaderboard_size?: number | string;
+  prize_pool?: number | string;
+  eligibility_type?: string;
+  segment?: string;
+  [key: string]: unknown;
+}
+
+export interface GamruTournament {
+  id: string;
+  name: string;
+  description?: string | null;
+  status?: "ACTIVE" | "INACTIVE";
+  priority?: number;
+  tags?: string[];
+  data?: GamruTournamentData;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/**
+ * Player-facing widgets customization configured in Settings → Widgets.
+ * Banner image URLs (desktop / mobile) and the casino / sport tag colors.
+ */
+export interface GamruWidgetsConfig {
+  missions_banner_desktop?: string;
+  missions_banner_mobile?: string;
+  tournaments_banner_desktop?: string;
+  tournaments_banner_mobile?: string;
+  tournaments_tag_color_casino?: string;
+  tournaments_tag_color_sport?: string;
 }
 
 /**
@@ -107,6 +161,9 @@ export interface GamruUserProfileData {
    * leaner payloads, so treat as optional.
    */
   gamification?: GamruGamification;
+
+  /** Player-facing widgets customization (banners + tag colors). */
+  widgets_config?: GamruWidgetsConfig | null;
 
   /** Optional XP ledger (absent on the basic player payload). */
   xp_history?: Array<{
@@ -612,6 +669,16 @@ export const gamru = {
     ) => post(`/gamification/${resource}/update-by/${id}`, data, token),
     deleteById: (resource: string, id: string, token: string) =>
       del(`/gamification/${resource}/${id}`, token),
+  },
+
+  /** /api/tournament-leaderboard — push player scores to the backoffice. */
+  tournamentLeaderboard: {
+    submitScore: (
+      tournamentId: string,
+      data: { email: string; name?: string | null; points: number }
+    ) => post(`/tournament-leaderboard/${tournamentId}/score`, data),
+    getStandings: (tournamentId: string, token: string) =>
+      get(`/tournament-leaderboard/${tournamentId}`, undefined, token),
   },
 
   /** /api/campaigns */

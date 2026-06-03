@@ -11,6 +11,7 @@ import "../modules/xp/model/xp-history.model.ts";
 import "../modules/activity/model/activity-log.model.ts";
 import "../modules/mission/model/mission.model.ts";
 import "../modules/mission/model/user-mission.model.ts";
+import "../modules/tournament/model/user-tournament.model.ts";
 import "../modules/reward/model/reward.model.ts";
 import "../modules/reward/model/user-reward.model.ts";
 import "../modules/achievement/model/achievement.model.ts";
