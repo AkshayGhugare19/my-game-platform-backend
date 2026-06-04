@@ -36,6 +36,10 @@ export class UserTournament extends Model<
   declare tournament_industry: CreationOptional<string | null>;
   declare tournament_image: CreationOptional<string | null>;
   declare last_played_at: CreationOptional<Date | null>;
+  /** Set once the tournament has ended and prizes were distributed. */
+  declare prize_awarded: CreationOptional<boolean>;
+  /** Prize-pool share credited to this player's wallet when they finished top-3. */
+  declare prize_amount: CreationOptional<number>;
   declare readonly created_at: CreationOptional<Date>;
   declare readonly updated_at: CreationOptional<Date>;
 }
@@ -54,6 +58,8 @@ UserTournament.init(
     tournament_industry: { type: DataTypes.STRING(50), allowNull: true },
     tournament_image: { type: DataTypes.TEXT, allowNull: true },
     last_played_at: { type: DataTypes.DATE, allowNull: true },
+    prize_awarded: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    prize_amount: { type: DataTypes.FLOAT, allowNull: false, defaultValue: 0 },
     created_at: DataTypes.DATE,
     updated_at: DataTypes.DATE,
   },

@@ -1,13 +1,16 @@
 import { Op } from "sequelize";
 import { AppError } from "../../../utils/AppError.ts";
 import { logger } from "../../../utils/logger.ts";
+import sequelize from "../../../config/db.ts";
 import gamru, {
   gamruUserProfileData,
   type GamruTournament,
   type GamruWidgetsConfig,
 } from "../../../utils/gamruService.ts";
+import UserTournament from "../model/user-tournament.model.ts";
 import UserTournamentRepository from "../model/user-tournament.repository.ts";
 import UserRepository from "../../user/model/user.repository.ts";
+import WalletRepository from "../../wallet/model/wallet.repository.ts";
 
 /** Lifecycle state derived from the tournament's start / end dates. */
 export type TournamentState = "SCHEDULED" | "IN_PROGRESS" | "ENDED";
@@ -49,6 +52,8 @@ export interface TournamentLeaderboardEntry {
   name: string;
   score: number;
   is_me: boolean;
+  /** Prize-pool share credited to this player once the tournament ended (top-3). */
+  prize: number;
 }
 
 const DEFAULT_BRANDING: TournamentBranding = {
@@ -180,7 +185,15 @@ export const listTournaments = async (
   email: string
 ): Promise<TournamentListResult> => {
   const { tournaments, branding } = await loadCatalog(email);
-  return { branding, tournaments: tournaments.map(mapTournament) };
+  const mapped = tournaments.map(mapTournament);
+  // Settle any tournament that has ended (idempotent) so prizes land in
+  // wallets as soon as a player opens the tournaments page after it closes.
+  await Promise.all(
+    mapped
+      .filter((t) => t.state === "ENDED")
+      .map((t) => settleTournamentPrizes(t.id, t.prize_pool))
+  );
+  return { branding, tournaments: mapped };
 };
 
 export interface TournamentDetailResult {
@@ -199,6 +212,11 @@ export const getTournament = async (
   if (!found) throw new AppError("Tournament not found", 404);
 
   const tournament = mapTournament(found);
+  // Tournament is over → settle the prize pool to the top-3 (once) before we
+  // render the (now final) standings.
+  if (tournament.state === "ENDED") {
+    await settleTournamentPrizes(tournamentId, tournament.prize_pool);
+  }
   const leaderboard = await buildLeaderboard(
     tournamentId,
     userId,
@@ -233,7 +251,72 @@ const buildLeaderboard = async (
     name: nameById.get(r.user_id) ?? "Player",
     score: r.score,
     is_me: r.user_id === meId,
+    prize: round2(Number(r.prize_amount ?? 0)),
   }));
+};
+
+/** Prize-pool split for the top-3 finishers (1st / 2nd / 3rd). */
+const PRIZE_SPLIT = [0.5, 0.3, 0.2];
+
+const round2 = (n: number): number => Math.round(n * 100) / 100;
+
+/**
+ * Settle a finished tournament: credit the top-3 players a share of the prize
+ * pool (50/30/20) to their wallet balance, exactly once.
+ *
+ * Idempotent — guarded by the `prize_awarded` flag inside a transaction, so
+ * concurrent requests (or repeated views of an ended tournament) never double
+ * pay. Runs lazily whenever an ENDED tournament is loaded; a Gamru/DB hiccup
+ * is logged and swallowed so it never breaks the page.
+ */
+export const settleTournamentPrizes = async (
+  tournamentId: string,
+  prizePool: number | null
+): Promise<void> => {
+  const pool = Number(prizePool);
+  if (!Number.isFinite(pool) || pool <= 0) return;
+
+  try {
+    await sequelize.transaction(async (t) => {
+      // Already settled? (any awarded row for this tournament → stop).
+      const settled = await UserTournament.count({
+        where: { tournament_id: tournamentId, prize_awarded: true },
+        transaction: t,
+      });
+      if (settled > 0) return;
+
+      // Top-3 scorers, locked for the duration of the payout.
+      const winners = await UserTournament.findAll({
+        where: { tournament_id: tournamentId, score: { [Op.gt]: 0 } },
+        order: [["score", "DESC"]],
+        limit: PRIZE_SPLIT.length,
+        transaction: t,
+        lock: t.LOCK.UPDATE,
+      });
+      if (winners.length === 0) return;
+
+      for (let i = 0; i < winners.length; i += 1) {
+        const w = winners[i];
+        const amount = round2(pool * PRIZE_SPLIT[i]);
+
+        const wallet = await WalletRepository.findOrCreateByUserId(w.user_id);
+        wallet.balance = round2(Number(wallet.balance ?? 0) + amount);
+        await wallet.save({ transaction: t });
+
+        w.prize_awarded = true;
+        w.prize_amount = amount;
+        await w.save({ transaction: t });
+      }
+
+      logger.info("Tournament prizes distributed", {
+        tournamentId,
+        pool,
+        winners: winners.length,
+      });
+    });
+  } catch (err) {
+    logger.warn("Tournament prize settlement failed", { tournamentId, err });
+  }
 };
 
 export interface RecordScoreResult {
