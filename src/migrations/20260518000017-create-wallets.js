@@ -3,6 +3,13 @@
 /** @type {import('sequelize-cli').Migration} */
 module.exports = {
   async up(queryInterface, Sequelize) {
+    // Idempotent: the table may already exist (e.g. created via `db:sync`,
+    // or by this migration under its previous `...0007` filename).
+    const tables = (await queryInterface.showAllTables()).map((t) =>
+      typeof t === "string" ? t : t.tableName
+    );
+    if (tables.includes("wallets")) return;
+
     await queryInterface.createTable("wallets", {
       id: {
         type: Sequelize.UUID,
