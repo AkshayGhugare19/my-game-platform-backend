@@ -24,6 +24,7 @@ export const registerSchema = Joi.object({
     "string.min": "Password must be at least 6 characters",
     "any.required": "Password is required",
   }),
+  source: Joi.string().optional().allow(null, "GAMIFY_ENGAGE"),
 });
 
 export const loginSchema = Joi.object({

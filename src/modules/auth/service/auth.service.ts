@@ -26,6 +26,7 @@ interface RegisterInput {
   email: string;
   mobile: string;
   password: string;
+  source?: string;
 }
 interface ClientMeta {
   ip?: string;
@@ -69,6 +70,7 @@ export const registerService = async (input: RegisterInput) => {
     username: deriveUsername(input.email),
     role: "USER",
     status: "ACTIVE",
+    source: input.source,
   });
 
   if (!gamruRes.ok) {

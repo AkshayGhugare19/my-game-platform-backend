@@ -9,6 +9,7 @@ export interface GamruUserPayload {
   username: string;
   role: string;
   status: string;
+  source?: string;
 }
 
 export interface GamruResult<T = unknown> {
