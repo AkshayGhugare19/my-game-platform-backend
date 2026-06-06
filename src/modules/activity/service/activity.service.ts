@@ -52,6 +52,7 @@ export const recordActivity = async (input: RecordActivityInput) => {
     type,
     ruleCode: type,
     idempotencyKey,
+    amount: amount ?? 0,
     meta,
   });
 

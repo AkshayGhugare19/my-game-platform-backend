@@ -14,16 +14,12 @@ import {
 } from "./events.ts";
 import { pushNotification } from "../modules/notification/service/notification.service.ts";
 import { broadcastTop } from "../modules/leaderboard/service/leaderboard.service.ts";
-import { progressMissions } from "../modules/mission/service/mission.engine.ts";
+import {
+  advanceForActivity,
+  advanceForLogin,
+} from "../modules/mission/service/mission.engine.ts";
 import { unlockByRank } from "../modules/reward/service/reward.engine.ts";
 import { emitToUser } from "../realtime/socket.ts";
-import type { MissionMetric } from "../modules/mission/model/mission.model.ts";
-
-/** Maps an activity type → the mission metric it advances. */
-const METRIC_BY_TYPE: Record<string, MissionMetric> = {
-  GAME_PLAY: "GAMES_PLAYED",
-  BET_PLACE: "BETS_PLACED",
-};
 
 /**
  * Wires every engine to the domain event bus exactly once at boot.
@@ -42,7 +38,6 @@ export const registerEventHandlers = (): void => {
 
   bus.on<XpAwardedPayload>(EVENTS.XP_AWARDED, async (p) => {
     void broadcastTop();
-    await progressMissions(p.userId, "XP_EARNED", p.amount);
     emitToUser(p.userId, "xp:awarded", {
       amount: p.amount,
       xpTotal: p.xpTotal,
@@ -50,12 +45,25 @@ export const registerEventHandlers = (): void => {
   });
 
   bus.on<ActivityRecordedPayload>(EVENTS.ACTIVITY_RECORDED, async (p) => {
-    const metric = METRIC_BY_TYPE[p.type];
-    if (metric) await progressMissions(p.userId, metric, 1);
+    // Build this play's signal from the activity meta. `bet` is the stake
+    // (turnover) — used for wager missions and the min-bet gate; `win` /
+    // `winAmount` drive win missions. `amount` (the activity XP/win amount)
+    // is only a fallback for the stake.
+    const m = (p.meta ?? {}) as Record<string, unknown>;
+    const stake = Number((m.bet as number | undefined) ?? p.amount ?? 0) || 0;
+    const win = Boolean(m.win);
+    const winAmount =
+      Number((m.winAmount as number | undefined) ?? (win ? p.amount : 0)) || 0;
+    const gameKey =
+      (m.game as string | undefined) ??
+      (m.gameId as string | undefined) ??
+      (m.name as string | undefined) ??
+      null;
+    await advanceForActivity(p.userId, { stake, win, winAmount, gameKey });
   });
 
   bus.on<StreakUpdatedPayload>(EVENTS.STREAK_UPDATED, async (p) => {
-    await progressMissions(p.userId, "LOGIN_DAYS", 1);
+    await advanceForLogin(p.userId);
     emitToUser(p.userId, "streak:updated", {
       current: p.current,
       longest: p.longest,

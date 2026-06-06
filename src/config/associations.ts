@@ -2,7 +2,6 @@ import User from "../modules/user/model/user.model.ts";
 import RefreshToken from "../modules/auth/model/refresh-token.model.ts";
 import XpHistory from "../modules/xp/model/xp-history.model.ts";
 import ActivityLog from "../modules/activity/model/activity-log.model.ts";
-import Mission from "../modules/mission/model/mission.model.ts";
 import UserMission from "../modules/mission/model/user-mission.model.ts";
 import Reward from "../modules/reward/model/reward.model.ts";
 import UserReward from "../modules/reward/model/user-reward.model.ts";
@@ -31,9 +30,9 @@ export const initAssociations = (): void => {
   User.hasMany(ActivityLog, { foreignKey: "user_id", as: "activity" });
   ActivityLog.belongsTo(User, { foreignKey: "user_id", as: "user" });
 
-  // Missions
-  Mission.hasMany(UserMission, { foreignKey: "mission_id", as: "userMissions" });
-  UserMission.belongsTo(Mission, { foreignKey: "mission_id", as: "mission" });
+  // Missions — `user_missions.mission_id` references a GAMRU-authored mission
+  // (the source of truth), not the local `missions` table, so there is NO
+  // local foreign key on mission_id (mirrors user_tournaments.tournament_id).
   User.hasMany(UserMission, { foreignKey: "user_id", as: "missions" });
   UserMission.belongsTo(User, { foreignKey: "user_id", as: "user" });
 

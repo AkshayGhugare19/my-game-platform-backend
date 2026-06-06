@@ -1,36 +1,53 @@
 import type { Response } from "express";
 import type { AuthRequest } from "../../../types/request.type.ts";
-import { successResponse, errorResponse } from "../../../utils/responseHandler.ts";
+import {
+  successResponse,
+  errorResponse,
+} from "../../../utils/responseHandler.ts";
 import { AppError } from "../../../utils/AppError.ts";
 import {
-  listUserMissions,
+  listMissions,
+  getMission,
+  joinMission,
   claimMission,
+  cancelMission,
 } from "../service/mission.engine.ts";
-import MissionRepository from "../model/mission.repository.ts";
-import { readPageParams, paginateArray } from "../../../utils/pagination.ts";
 
 export const getMyMissions = async (
   req: AuthRequest,
   res: Response
 ): Promise<void> => {
   try {
-    const { page, limit } = readPageParams(req.query);
-    const all = await listUserMissions(req.user!.id);
-    successResponse(res, 200, "Missions", paginateArray(all, page, limit));
+    const data = await listMissions(req.user!.id, req.user!.email);
+    successResponse(res, 200, "Missions", data);
   } catch {
     errorResponse(res, 500, "Failed to load missions");
   }
 };
 
-export const getCatalog = async (
-  _req: AuthRequest,
+export const getOne = async (
+  req: AuthRequest,
   res: Response
 ): Promise<void> => {
   try {
-    const data = await MissionRepository.activeCatalog();
-    successResponse(res, 200, "Mission catalog", data);
-  } catch {
-    errorResponse(res, 500, "Failed to load catalog");
+    const data = await getMission(req.user!.id, req.user!.email, req.params.id);
+    successResponse(res, 200, "Mission", data);
+  } catch (e) {
+    if (e instanceof AppError) errorResponse(res, e.statusCode, e.message);
+    else errorResponse(res, 500, "Failed to load mission");
+  }
+};
+
+export const join = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const data = await joinMission(req.user!.id, req.user!.email, req.params.id);
+    successResponse(res, 200, "Mission joined", data);
+  } catch (e) {
+    if (e instanceof AppError) errorResponse(res, e.statusCode, e.message);
+    else errorResponse(res, 500, "Failed to join mission");
   }
 };
 
@@ -39,10 +56,27 @@ export const claim = async (
   res: Response
 ): Promise<void> => {
   try {
-    const data = await claimMission(req.user!.id, req.params.id);
+    const data = await claimMission(
+      req.user!.id,
+      req.user!.email,
+      req.params.id
+    );
     successResponse(res, 200, "Mission reward claimed", data);
   } catch (e) {
     if (e instanceof AppError) errorResponse(res, e.statusCode, e.message);
     else errorResponse(res, 500, "Failed to claim mission");
+  }
+};
+
+export const cancel = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    await cancelMission(req.user!.id, req.params.id);
+    successResponse(res, 200, "Mission cancelled", null);
+  } catch (e) {
+    if (e instanceof AppError) errorResponse(res, e.statusCode, e.message);
+    else errorResponse(res, 500, "Failed to cancel mission");
   }
 };

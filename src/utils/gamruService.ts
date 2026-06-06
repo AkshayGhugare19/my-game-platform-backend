@@ -69,12 +69,61 @@ export interface GamruGamification {
   next_rank?: GamruNextRank | null;
   levels?: GamruLevelTier[];
   ranks?: Array<Record<string, unknown>>;
-  missions?: unknown[];
+  missions?: GamruMission[];
   mission_bundles?: unknown[];
   reward_shop?: unknown[];
   tournaments?: GamruTournament[];
   rewards?: unknown[];
   logs?: GamruGamificationLog[];
+}
+
+/**
+ * A mission as authored in Gamru (Gamification → Missions). Common columns
+ * are first-class; the multi-step wizard's fields live in the JSONB `data`
+ * blob, so every `data` field is optional.
+ */
+export interface GamruMissionData {
+  category?: string; // "Casino" | "Sport" | "Slots" | "Originals" | …
+  duration_days?: number | string;
+  vip?: boolean;
+  large_image?: string;
+  small_image?: string;
+  /** Player event that advances progress: wager | bet_count | login | … */
+  objective_type?: string;
+  /** "count" (times) or "amount" (sum). */
+  measure?: string;
+  objective_target?: number | string;
+  condition_label?: string;
+  objective_game_category?: string;
+  min_bet?: number | string;
+  min_multiplier?: number | string;
+  bet_currency?: string;
+  /** Game route keys (array), or empty for all games in the category. */
+  games?: string[] | string;
+  time_frame_type?: string;
+  start_date?: string;
+  end_date?: string;
+  reward_type?: string;
+  reward_amount?: number | string;
+  reward_label?: string;
+  max_bonus?: number | string;
+  bonus_wagering?: string;
+  deposit_required?: boolean;
+  wagering_required?: boolean;
+  more_details?: string;
+  [key: string]: unknown;
+}
+
+export interface GamruMission {
+  id: string;
+  name: string;
+  description?: string | null;
+  status?: "ACTIVE" | "INACTIVE";
+  priority?: number;
+  tags?: string[];
+  data?: GamruMissionData;
+  created_at?: string;
+  updated_at?: string;
 }
 
 /**
@@ -820,6 +869,10 @@ export const gamru = {
       post(`/players/${id}/rewards`, data, token),
     claimReward: (playerId: string, rewardId: string) =>
       post(`/players/${playerId}/rewards/${rewardId}/claim`, {}),
+    // Grant a completed mission's reward to the player (lands in gamru's
+    // reward ledger → Special Bonuses). clientAuth on gamru.
+    claimMissionReward: (playerId: string, missionId: string) =>
+      post(`/players/${playerId}/missions/${missionId}/claim`, {}),
     logs: (id: string, query: Q, token: string) =>
       get(`/players/${id}/logs`, query, token),
   },

@@ -21,6 +21,8 @@ export interface ActivityRecordedPayload {
   type: string;
   ruleCode: string;
   idempotencyKey: string;
+  /** Bet size for this play — drives wager-amount mission progress. */
+  amount?: number;
   meta?: Record<string, unknown>;
 }
 export interface XpAwardedPayload {
