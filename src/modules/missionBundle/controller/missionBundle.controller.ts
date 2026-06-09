@@ -38,7 +38,7 @@ export const getOne = async (
   }
 };
 
-/* Per-mission actions on the bundle track (req.params.id is the MISSION id). */
+/* Per-mission actions on a bundle's track (bundleId + missionId in the path). */
 
 export const joinMission = async (
   req: AuthRequest,
@@ -48,7 +48,8 @@ export const joinMission = async (
     const data = await joinBundleMission(
       req.user!.id,
       req.user!.email,
-      req.params.id
+      req.params.bundleId,
+      req.params.missionId
     );
     successResponse(res, 200, "Mission joined", data);
   } catch (e) {
@@ -65,7 +66,8 @@ export const claimMission = async (
     const data = await claimBundleMission(
       req.user!.id,
       req.user!.email,
-      req.params.id
+      req.params.bundleId,
+      req.params.missionId
     );
     successResponse(res, 200, "Mission reward claimed", data);
   } catch (e) {
@@ -79,7 +81,11 @@ export const cancelMission = async (
   res: Response
 ): Promise<void> => {
   try {
-    await cancelBundleMission(req.user!.id, req.params.id);
+    await cancelBundleMission(
+      req.user!.id,
+      req.params.bundleId,
+      req.params.missionId
+    );
     successResponse(res, 200, "Mission cancelled", null);
   } catch (e) {
     if (e instanceof AppError) errorResponse(res, e.statusCode, e.message);

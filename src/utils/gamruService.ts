@@ -149,8 +149,13 @@ export interface GamruMissionBundleData {
   easter_eggs?: string;
   start_date?: string;
   end_date?: string;
+  /** "All Players" | "Segment" — who the bundle is visible to. */
   eligibility_type?: string;
-  segment?: string;
+  /**
+   * When eligibility_type is "Segment", the segment names the bundle is limited
+   * to (multi-select in Gamru). May be a legacy single string on older bundles.
+   */
+  segment?: string[] | string;
   [key: string]: unknown;
 }
 
@@ -254,6 +259,13 @@ export interface GamruUserProfileData {
 
   /** Player-facing widgets customization (banners + tag colors). */
   widgets_config?: GamruWidgetsConfig | null;
+
+  /**
+   * Names of the CRM segments this player currently belongs to, resolved by
+   * gamru's segment rule engine at fetch time. Used to gate segment-restricted
+   * content (e.g. mission bundles). Absent on leaner payloads.
+   */
+  segments?: string[];
 
   /** Optional XP ledger (absent on the basic player payload). */
   xp_history?: Array<{

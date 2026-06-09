@@ -4,15 +4,23 @@
  * Mission bundles are AUTHORED in gamru (Gamification → Mission Bundles) and
  * fetched live per request from the player's gamru profile payload
  * (`gamification.mission_bundles`). A bundle is a curated GROUPING of existing
- * missions — it carries no reward or progress of its own. The player joins,
- * progresses and claims each mission individually (reusing the mission flow),
- * so this engine is read-only: it resolves each bundle's mission references to
- * the same player-facing MissionDTOs the Missions page uses (participation
- * merged in) and reports an aggregate completion count for the bundle.
+ * missions — it carries no reward of its own. The player joins, progresses and
+ * claims each mission individually (reusing the mission flow).
+ *
+ * Two important scoping rules live here:
+ *  - Each bundle has its OWN participation track (a per-bundle `period_key`), so
+ *    the same mission in two different bundles — and on the standalone Missions
+ *    tab ("GAMRU") — tracks completely independently. A brand-new bundle always
+ *    starts every mission at AVAILABLE.
+ *  - Bundles are filtered by ELIGIBILITY: an "All Players" bundle shows to
+ *    everyone; a "Segment" bundle shows only to players who belong to one of the
+ *    selected segments (the player's segments are resolved by gamru and carried
+ *    on the profile payload).
  */
 import { AppError } from "../../../utils/AppError.ts";
 import {
   gamruUserProfileData,
+  type GamruMission,
   type GamruMissionBundle,
 } from "../../../utils/gamruService.ts";
 import {
@@ -24,16 +32,20 @@ import {
   type MissionDTO,
   type MissionBranding,
 } from "../../mission/service/mission.engine.ts";
+import UserMission from "../../mission/model/user-mission.model.ts";
 import UserMissionRepository from "../../mission/model/user-mission.repository.ts";
 
 /**
- * Bundle participation lives on its OWN track, separate from the standalone
- * Missions tab ("GAMRU"). So completing a mission in the Missions tab does NOT
- * complete it inside a bundle, and vice-versa — they are independent rows.
- * (period_key is STRING(20), so this is a single shared key rather than one per
- * bundle id; a mission shared across bundles therefore shares one bundle row.)
+ * A bundle's participation track key. `period_key` is STRING(20), too short for
+ * "BUNDLE:" + a uuid, so we derive a compact per-bundle key: "B" + the first 19
+ * hex chars of the bundle id. That keeps every bundle independent (and distinct
+ * from the standalone "GAMRU" track) while fitting the column.
  */
-const BUNDLE_PERIOD = "BUNDLE";
+export const bundlePeriodKey = (bundleId: string): string =>
+  ("B" + bundleId.replace(/-/g, "")).slice(0, 20);
+
+const rowKey = (periodKey: string, missionId: string): string =>
+  `${periodKey}::${missionId}`;
 
 export interface BundleDTO {
   id: string;
@@ -45,6 +57,7 @@ export interface BundleDTO {
   periodicity: string | null;
   priority: number;
   eligibility_type: string | null;
+  segments: string[];
   tags: string[];
   /** The missions grouped in this bundle, with the player's participation. */
   missions: MissionDTO[];
@@ -68,6 +81,12 @@ const toStr = (v: unknown): string | null => {
   if (v === null || v === undefined) return null;
   const s = String(v).trim();
   return s === "" ? null : s;
+};
+
+/** Normalize a list-or-comma-string of plain names into trimmed names. */
+const toNames = (raw: unknown): string[] => {
+  const list = Array.isArray(raw) ? raw : String(raw ?? "").split(",");
+  return list.map((s) => String(s).trim()).filter(Boolean);
 };
 
 interface MissionRef {
@@ -94,72 +113,105 @@ const bundleMissionRefs = (raw: unknown): MissionRef[] => {
     .filter((r) => r.id || r.name);
 };
 
+/** The segment names a "Segment"-eligibility bundle is limited to. */
+const bundleSegments = (b: GamruMissionBundle): string[] =>
+  toNames(b.data?.segment);
+
 /**
- * Fetch the live catalog from gamru for this player and build, in a single
- * round-trip, the player-facing mission DTOs (participation merged) indexed by
- * both lowercased name and id, plus the raw bundles and page branding. Never
- * throws on a gamru outage — returns an empty catalog so the page still renders.
+ * Whether this bundle should be visible to a player with these segment names.
+ * "All Players" (or unset eligibility) is always visible; a "Segment" bundle is
+ * visible only when the player belongs to one of its segments. A segment bundle
+ * with no segments chosen falls back to visible (nothing to restrict by).
+ */
+const isEligible = (
+  b: GamruMissionBundle,
+  playerSegments: Set<string>
+): boolean => {
+  const type = String(b.data?.eligibility_type ?? "").trim().toLowerCase();
+  if (type !== "segment") return true;
+  const segs = bundleSegments(b);
+  if (segs.length === 0) return true;
+  return segs.some((s) => playerSegments.has(s.toLowerCase()));
+};
+
+/**
+ * Fetch the live catalog from gamru for this player in a single round-trip:
+ * the raw missions (indexed by id and lowercased name), the raw bundles, the
+ * player's bundle-track participation rows (indexed by period+mission), the
+ * player's segments, and the page branding. Never throws on a gamru outage —
+ * returns an empty catalog so the page still renders.
  */
 const loadCatalog = async (
   userId: string,
   email: string
 ): Promise<{
   bundles: GamruMissionBundle[];
-  byName: Map<string, MissionDTO>;
-  byId: Map<string, MissionDTO>;
+  rawById: Map<string, GamruMission>;
+  rawByName: Map<string, GamruMission>;
+  rowMap: Map<string, UserMission>;
+  playerSegments: Set<string>;
   branding: MissionBranding;
 }> => {
+  const empty = {
+    bundles: [] as GamruMissionBundle[],
+    rawById: new Map<string, GamruMission>(),
+    rawByName: new Map<string, GamruMission>(),
+    rowMap: new Map<string, UserMission>(),
+    playerSegments: new Set<string>(),
+    branding: DEFAULT_BRANDING,
+  };
+
   const res = await gamruUserProfileData(email);
-  if (!res.ok || !res.body) {
-    return {
-      bundles: [],
-      byName: new Map(),
-      byId: new Map(),
-      branding: DEFAULT_BRANDING,
-    };
-  }
+  if (!res.ok || !res.body) return empty;
 
   const missions = res.body.gamification?.missions ?? [];
   const bundles = res.body.gamification?.mission_bundles ?? [];
   const rows = await UserMissionRepository.listByUser(userId);
-  // Only the bundle track — keeps bundle progress independent of the tab.
-  const part = new Map(
-    rows
-      .filter((r) => r.period_key === BUNDLE_PERIOD)
-      .map((r) => [r.mission_id, r])
+
+  const rawById = new Map<string, GamruMission>();
+  const rawByName = new Map<string, GamruMission>();
+  for (const m of missions) {
+    rawById.set(m.id, m);
+    rawByName.set(m.name.trim().toLowerCase(), m);
+  }
+
+  const rowMap = new Map<string, UserMission>(
+    rows.map((r) => [rowKey(r.period_key, r.mission_id), r])
   );
 
-  const byName = new Map<string, MissionDTO>();
-  const byId = new Map<string, MissionDTO>();
-  for (const m of missions) {
-    const dto = mapMission(m, part.get(m.id));
-    byId.set(dto.id, dto);
-    byName.set(dto.name.trim().toLowerCase(), dto);
-  }
+  const playerSegments = new Set<string>(
+    (res.body.segments ?? []).map((s) => String(s).trim().toLowerCase())
+  );
 
   return {
     bundles,
-    byName,
-    byId,
+    rawById,
+    rawByName,
+    rowMap,
+    playerSegments,
     branding: mapBranding(res.body.widgets_config),
   };
 };
 
 const mapBundle = (
   b: GamruMissionBundle,
-  byName: Map<string, MissionDTO>,
-  byId: Map<string, MissionDTO>
+  rawById: Map<string, GamruMission>,
+  rawByName: Map<string, GamruMission>,
+  rowMap: Map<string, UserMission>
 ): BundleDTO => {
   const d = b.data ?? {};
+  const pk = bundlePeriodKey(b.id);
   const refs = bundleMissionRefs(d.missions);
 
-  // Resolve each reference to a mission, matching by id first (the stable
-  // relation) then by name, deduping and dropping any that no longer exist.
+  // Resolve each reference to a mission (by id first — the stable relation —
+  // then name), dedupe, and merge THIS bundle's own participation row so its
+  // status/progress is independent of other bundles and the Missions tab.
   const seen = new Set<string>();
   const missions = refs
-    .map((ref) => (ref.id && byId.get(ref.id)) || byName.get(ref.name.toLowerCase()))
-    .filter((m): m is MissionDTO => Boolean(m))
-    .filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true)));
+    .map((ref) => (ref.id && rawById.get(ref.id)) || rawByName.get(ref.name.toLowerCase()))
+    .filter((m): m is GamruMission => Boolean(m))
+    .filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true)))
+    .map((m) => mapMission(m, rowMap.get(rowKey(pk, m.id))));
 
   const completed = missions.filter(
     (m) => m.status === "COMPLETED" || m.status === "CLAIMED"
@@ -175,6 +227,7 @@ const mapBundle = (
     periodicity: toStr(d.periodicity),
     priority: Number(b.priority ?? 0),
     eligibility_type: toStr(d.eligibility_type),
+    segments: bundleSegments(b),
     tags: Array.isArray(b.tags) ? b.tags : [],
     missions,
     total: missions.length,
@@ -182,15 +235,18 @@ const mapBundle = (
   };
 };
 
-/** All active bundles with each one's grouped missions + the player's progress. */
+/** Bundles the player is ELIGIBLE for, each with grouped missions + progress. */
 export const listBundles = async (
   userId: string,
   email: string
 ): Promise<BundleListResult> => {
-  const { bundles, byName, byId, branding } = await loadCatalog(userId, email);
+  const { bundles, rawById, rawByName, rowMap, playerSegments, branding } =
+    await loadCatalog(userId, email);
   return {
     branding,
-    bundles: bundles.map((b) => mapBundle(b, byName, byId)),
+    bundles: bundles
+      .filter((b) => isEligible(b, playerSegments))
+      .map((b) => mapBundle(b, rawById, rawByName, rowMap)),
   };
 };
 
@@ -199,36 +255,43 @@ export const getBundle = async (
   email: string,
   bundleId: string
 ): Promise<BundleDTO> => {
-  const { bundles, byName, byId } = await loadCatalog(userId, email);
+  const { bundles, rawById, rawByName, rowMap, playerSegments } =
+    await loadCatalog(userId, email);
   const found = bundles.find((b) => b.id === bundleId);
-  if (!found) throw new AppError("Mission bundle not found", 404);
-  return mapBundle(found, byName, byId);
+  if (!found || !isEligible(found, playerSegments)) {
+    throw new AppError("Mission bundle not found", 404);
+  }
+  return mapBundle(found, rawById, rawByName, rowMap);
 };
 
-/* ── Per-mission participation on the bundle track ─────────────────────────── */
-// A mission inside a bundle is joined/progressed/claimed on its own "BUNDLE"
-// track (no one-per-bucket exclusivity, so every mission in the bundle can run
-// at once). Gameplay advances whatever is IN_PROGRESS on any track, so these
-// progress independently of the same mission on the Missions tab.
+/* ── Per-mission participation on a bundle's track ─────────────────────────── */
+// A mission inside a bundle is joined/progressed/claimed on that bundle's own
+// track (per-bundle period_key, no one-per-bucket exclusivity so every mission
+// in the bundle can run at once). Gameplay advances whatever is IN_PROGRESS on
+// any track, so these progress independently of the same mission elsewhere.
 
 export const joinBundleMission = (
   userId: string,
   email: string,
+  bundleId: string,
   missionId: string
 ): Promise<MissionDTO> =>
   joinMission(userId, email, missionId, {
-    periodKey: BUNDLE_PERIOD,
+    periodKey: bundlePeriodKey(bundleId),
     exclusive: false,
   });
 
 export const claimBundleMission = (
   userId: string,
   email: string,
+  bundleId: string,
   missionId: string
 ): Promise<{ reward_label: string }> =>
-  claimMission(userId, email, missionId, BUNDLE_PERIOD);
+  claimMission(userId, email, missionId, bundlePeriodKey(bundleId));
 
 export const cancelBundleMission = (
   userId: string,
+  bundleId: string,
   missionId: string
-): Promise<void> => cancelMission(userId, missionId, BUNDLE_PERIOD);
+): Promise<void> =>
+  cancelMission(userId, missionId, bundlePeriodKey(bundleId));
