@@ -70,7 +70,7 @@ export interface GamruGamification {
   levels?: GamruLevelTier[];
   ranks?: Array<Record<string, unknown>>;
   missions?: GamruMission[];
-  mission_bundles?: unknown[];
+  mission_bundles?: GamruMissionBundle[];
   reward_shop?: unknown[];
   tournaments?: GamruTournament[];
   rewards?: unknown[];
@@ -122,6 +122,44 @@ export interface GamruMission {
   priority?: number;
   tags?: string[];
   data?: GamruMissionData;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/**
+ * A mission bundle as authored in Gamru (Gamification → Mission Bundles). A
+ * bundle is a curated GROUPING of existing missions — it carries no reward of
+ * its own; the player completes/claims each mission individually. The wizard's
+ * fields live in the JSONB `data` blob, so every `data` field is optional.
+ */
+export interface GamruMissionBundleData {
+  large_image?: string;
+  small_image?: string;
+  /** daily | weekly | monthly | lifetime — how the bundle resets. */
+  periodicity?: string;
+  /** "Lifetime" | "Custom". */
+  bundle_type?: string;
+  /**
+   * The missions grouped in this bundle, by NAME (authored via the multi-select
+   * in Gamru). May be a legacy comma-separated string on older bundles.
+   */
+  missions?: string[] | string;
+  easter_eggs?: string;
+  start_date?: string;
+  end_date?: string;
+  eligibility_type?: string;
+  segment?: string;
+  [key: string]: unknown;
+}
+
+export interface GamruMissionBundle {
+  id: string;
+  name: string;
+  description?: string | null;
+  status?: "ACTIVE" | "INACTIVE";
+  priority?: number;
+  tags?: string[];
+  data?: GamruMissionBundleData;
   created_at?: string;
   updated_at?: string;
 }

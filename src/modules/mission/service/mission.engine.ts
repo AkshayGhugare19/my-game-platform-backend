@@ -144,7 +144,7 @@ const statusFor = (um: UserMission | undefined): MissionStatus => {
   return "AVAILABLE";
 };
 
-const mapMission = (m: GamruMission, um?: UserMission): MissionDTO => {
+export const mapMission = (m: GamruMission, um?: UserMission): MissionDTO => {
   const d: GamruMissionData = m.data ?? {};
   const category = toStr(d.category) ?? "Casino";
   const target = toNum(d.objective_target) ?? 0;
@@ -182,7 +182,7 @@ const mapMission = (m: GamruMission, um?: UserMission): MissionDTO => {
   };
 };
 
-const mapBranding = (
+export const mapBranding = (
   cfg: GamruWidgetsConfig | null | undefined
 ): MissionBranding => ({
   banner_desktop: toStr(cfg?.missions_banner_desktop),

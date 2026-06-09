@@ -7,6 +7,7 @@ const ROUTE_GROUPS = [
   { prefix: "/api/profile", tag: "Profile", router: def(require("../route/profile.routes")) },
   { prefix: "/api/activity", tag: "Activity", router: def(require("../route/activity.routes")) },
   { prefix: "/api/missions", tag: "Missions", router: def(require("../route/mission.routes")) },
+  { prefix: "/api/mission-bundles", tag: "Mission Bundles", router: def(require("../route/missionBundle.routes")) },
   { prefix: "/api/rewards", tag: "Rewards", router: def(require("../route/reward.routes")) },
   { prefix: "/api/leaderboard", tag: "Leaderboard", router: def(require("../route/leaderboard.routes")) },
   { prefix: "/api/notifications", tag: "Notifications", router: def(require("../route/notification.routes")) },

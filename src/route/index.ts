@@ -3,6 +3,7 @@ import { Router } from "express";
 import authRoutes from "./auth.routes.ts";
 import activityRoutes from "./activity.routes.ts";
 import missionRoutes from "./mission.routes.ts";
+import missionBundleRoutes from "./missionBundle.routes.ts";
 import tournamentRoutes from "./tournament.routes.ts";
 import rewardRoutes from "./reward.routes.ts";
 import leaderboardRoutes from "./leaderboard.routes.ts";
@@ -23,6 +24,7 @@ apiRouter.get("/health", (_req, res) =>
 apiRouter.use("/auth", authRoutes);
 apiRouter.use("/activity", activityRoutes);
 apiRouter.use("/missions", missionRoutes);
+apiRouter.use("/mission-bundles", missionBundleRoutes);
 apiRouter.use("/tournaments", tournamentRoutes);
 apiRouter.use("/rewards", rewardRoutes);
 apiRouter.use("/leaderboard", leaderboardRoutes);
