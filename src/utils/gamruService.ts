@@ -140,10 +140,12 @@ export interface GamruMissionBundleData {
   /** "Lifetime" | "Custom". */
   bundle_type?: string;
   /**
-   * The missions grouped in this bundle, by NAME (authored via the multi-select
-   * in Gamru). May be a legacy comma-separated string on older bundles.
+   * The missions grouped in this bundle, authored via the multi-select in
+   * Gamru. Each entry carries the mission `id` (the relation to the missions
+   * table) and `name`. May be a legacy array of names, or a comma-separated
+   * string, on older bundles.
    */
-  missions?: string[] | string;
+  missions?: Array<{ id?: string; name?: string } | string> | string;
   easter_eggs?: string;
   start_date?: string;
   end_date?: string;

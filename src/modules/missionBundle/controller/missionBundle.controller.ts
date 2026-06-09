@@ -8,6 +8,9 @@ import { AppError } from "../../../utils/AppError.ts";
 import {
   listBundles,
   getBundle,
+  joinBundleMission,
+  claimBundleMission,
+  cancelBundleMission,
 } from "../service/missionBundle.engine.ts";
 
 export const getMyBundles = async (
@@ -32,5 +35,54 @@ export const getOne = async (
   } catch (e) {
     if (e instanceof AppError) errorResponse(res, e.statusCode, e.message);
     else errorResponse(res, 500, "Failed to load mission bundle");
+  }
+};
+
+/* Per-mission actions on the bundle track (req.params.id is the MISSION id). */
+
+export const joinMission = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const data = await joinBundleMission(
+      req.user!.id,
+      req.user!.email,
+      req.params.id
+    );
+    successResponse(res, 200, "Mission joined", data);
+  } catch (e) {
+    if (e instanceof AppError) errorResponse(res, e.statusCode, e.message);
+    else errorResponse(res, 500, "Failed to join mission");
+  }
+};
+
+export const claimMission = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const data = await claimBundleMission(
+      req.user!.id,
+      req.user!.email,
+      req.params.id
+    );
+    successResponse(res, 200, "Mission reward claimed", data);
+  } catch (e) {
+    if (e instanceof AppError) errorResponse(res, e.statusCode, e.message);
+    else errorResponse(res, 500, "Failed to claim mission");
+  }
+};
+
+export const cancelMission = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    await cancelBundleMission(req.user!.id, req.params.id);
+    successResponse(res, 200, "Mission cancelled", null);
+  } catch (e) {
+    if (e instanceof AppError) errorResponse(res, e.statusCode, e.message);
+    else errorResponse(res, 500, "Failed to cancel mission");
   }
 };

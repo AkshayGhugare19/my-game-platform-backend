@@ -18,10 +18,22 @@ import {
 import {
   mapMission,
   mapBranding,
+  joinMission,
+  claimMission,
+  cancelMission,
   type MissionDTO,
   type MissionBranding,
 } from "../../mission/service/mission.engine.ts";
 import UserMissionRepository from "../../mission/model/user-mission.repository.ts";
+
+/**
+ * Bundle participation lives on its OWN track, separate from the standalone
+ * Missions tab ("GAMRU"). So completing a mission in the Missions tab does NOT
+ * complete it inside a bundle, and vice-versa — they are independent rows.
+ * (period_key is STRING(20), so this is a single shared key rather than one per
+ * bundle id; a mission shared across bundles therefore shares one bundle row.)
+ */
+const BUNDLE_PERIOD = "BUNDLE";
 
 export interface BundleDTO {
   id: string;
@@ -58,12 +70,28 @@ const toStr = (v: unknown): string | null => {
   return s === "" ? null : s;
 };
 
-/** Normalize a bundle's `data.missions` (array, or legacy comma string) to names. */
-const bundleMissionRefs = (raw: unknown): string[] => {
+interface MissionRef {
+  id: string;
+  name: string;
+}
+
+/**
+ * Normalize a bundle's `data.missions` into `{ id, name }[]`, accepting the
+ * current shape (objects with id+name), a legacy array of names, or a legacy
+ * comma-separated string.
+ */
+const bundleMissionRefs = (raw: unknown): MissionRef[] => {
   const list = Array.isArray(raw) ? raw : String(raw ?? "").split(",");
-  return Array.from(
-    new Set(list.map((s) => String(s).trim()).filter(Boolean))
-  );
+  return list
+    .map((item): MissionRef =>
+      item && typeof item === "object"
+        ? {
+            id: String((item as MissionRef).id ?? "").trim(),
+            name: String((item as MissionRef).name ?? "").trim(),
+          }
+        : { id: "", name: String(item).trim() }
+    )
+    .filter((r) => r.id || r.name);
 };
 
 /**
@@ -94,7 +122,12 @@ const loadCatalog = async (
   const missions = res.body.gamification?.missions ?? [];
   const bundles = res.body.gamification?.mission_bundles ?? [];
   const rows = await UserMissionRepository.listByUser(userId);
-  const part = new Map(rows.map((r) => [r.mission_id, r]));
+  // Only the bundle track — keeps bundle progress independent of the tab.
+  const part = new Map(
+    rows
+      .filter((r) => r.period_key === BUNDLE_PERIOD)
+      .map((r) => [r.mission_id, r])
+  );
 
   const byName = new Map<string, MissionDTO>();
   const byId = new Map<string, MissionDTO>();
@@ -120,11 +153,13 @@ const mapBundle = (
   const d = b.data ?? {};
   const refs = bundleMissionRefs(d.missions);
 
-  // Resolve each reference to a mission, matching by name first (how the bundle
-  // is authored) then by id, and dropping any that no longer exist.
+  // Resolve each reference to a mission, matching by id first (the stable
+  // relation) then by name, deduping and dropping any that no longer exist.
+  const seen = new Set<string>();
   const missions = refs
-    .map((ref) => byName.get(ref.trim().toLowerCase()) ?? byId.get(ref))
-    .filter((m): m is MissionDTO => Boolean(m));
+    .map((ref) => (ref.id && byId.get(ref.id)) || byName.get(ref.name.toLowerCase()))
+    .filter((m): m is MissionDTO => Boolean(m))
+    .filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true)));
 
   const completed = missions.filter(
     (m) => m.status === "COMPLETED" || m.status === "CLAIMED"
@@ -169,3 +204,31 @@ export const getBundle = async (
   if (!found) throw new AppError("Mission bundle not found", 404);
   return mapBundle(found, byName, byId);
 };
+
+/* ── Per-mission participation on the bundle track ─────────────────────────── */
+// A mission inside a bundle is joined/progressed/claimed on its own "BUNDLE"
+// track (no one-per-bucket exclusivity, so every mission in the bundle can run
+// at once). Gameplay advances whatever is IN_PROGRESS on any track, so these
+// progress independently of the same mission on the Missions tab.
+
+export const joinBundleMission = (
+  userId: string,
+  email: string,
+  missionId: string
+): Promise<MissionDTO> =>
+  joinMission(userId, email, missionId, {
+    periodKey: BUNDLE_PERIOD,
+    exclusive: false,
+  });
+
+export const claimBundleMission = (
+  userId: string,
+  email: string,
+  missionId: string
+): Promise<{ reward_label: string }> =>
+  claimMission(userId, email, missionId, BUNDLE_PERIOD);
+
+export const cancelBundleMission = (
+  userId: string,
+  missionId: string
+): Promise<void> => cancelMission(userId, missionId, BUNDLE_PERIOD);

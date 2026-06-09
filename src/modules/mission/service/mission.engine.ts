@@ -222,14 +222,29 @@ const loadCatalog = async (
   return { missions, branding: mapBranding(res.body.widgets_config) };
 };
 
-/** Catalog + the player's participation merged in. */
+/**
+ * Options for the participation-mutating operations. `periodKey` selects the
+ * participation TRACK: the default "GAMRU" is the standalone Missions tab; a
+ * different key (e.g. "BUNDLE") is an independent track that completes
+ * separately. `exclusive` enforces the one-IN_PROGRESS-per-bucket rule within
+ * that track.
+ */
+export interface ParticipationOpts {
+  periodKey?: string;
+  exclusive?: boolean;
+}
+
+/** Catalog + the player's participation (for the given track) merged in. */
 export const listMissions = async (
   userId: string,
-  email: string
+  email: string,
+  periodKey: string = PERIOD
 ): Promise<MissionListResult> => {
   const { missions, branding } = await loadCatalog(email);
   const rows = await UserMissionRepository.listByUser(userId);
-  const byMission = new Map(rows.map((r) => [r.mission_id, r]));
+  const byMission = new Map(
+    rows.filter((r) => r.period_key === periodKey).map((r) => [r.mission_id, r])
+  );
   return {
     branding,
     missions: missions.map((m) => mapMission(m, byMission.get(m.id))),
@@ -239,26 +254,33 @@ export const listMissions = async (
 export const getMission = async (
   userId: string,
   email: string,
-  missionId: string
+  missionId: string,
+  periodKey: string = PERIOD
 ): Promise<MissionDTO> => {
   const { missions } = await loadCatalog(email);
   const found = missions.find((m) => m.id === missionId);
   if (!found) throw new AppError("Mission not found", 404);
-  const um = await UserMissionRepository.findForMission(userId, missionId);
+  const um = await UserMissionRepository.find(userId, missionId, periodKey);
   return mapMission(found, um ?? undefined);
 };
 
 /**
- * Join a mission. Enforces the BetFury rule: only one IN_PROGRESS mission per
- * bucket (Casino / Sport). Joining another in the same bucket cancels the
- * current one (its progress is reset). Re-joining a mission you already
- * started just resets it.
+ * Join a mission on a participation track. By default (the standalone Missions
+ * tab) it enforces the BetFury rule: only one IN_PROGRESS mission per bucket
+ * (Casino / Sport) — joining another in the same bucket cancels the current
+ * one. Other tracks (e.g. bundles) can opt out with `exclusive: false` so the
+ * player can run several at once. Re-joining a mission you already started on
+ * the same track just resets it. Tracks never affect each other.
  */
 export const joinMission = async (
   userId: string,
   email: string,
-  missionId: string
+  missionId: string,
+  opts: ParticipationOpts = {}
 ): Promise<MissionDTO> => {
+  const periodKey = opts.periodKey ?? PERIOD;
+  const exclusive = opts.exclusive ?? true;
+
   const { missions } = await loadCatalog(email);
   const found = missions.find((m) => m.id === missionId);
   if (!found) throw new AppError("Mission not found", 404);
@@ -268,17 +290,21 @@ export const joinMission = async (
     throw new AppError("This mission is not configured correctly", 400);
   }
 
-  // Cancel any other running mission in the same bucket (one per category).
-  const others = await UserMissionRepository.listActiveInCategory(
-    userId,
-    dto.bucket
-  );
-  for (const o of others) {
-    if (o.mission_id !== missionId) await o.destroy();
+  // Cancel any other running mission in the same bucket ON THIS TRACK only.
+  if (exclusive) {
+    const others = await UserMissionRepository.listActiveInCategory(
+      userId,
+      dto.bucket
+    );
+    for (const o of others) {
+      if (o.period_key === periodKey && o.mission_id !== missionId) {
+        await o.destroy();
+      }
+    }
   }
 
   const meta = objectiveSnapshot(dto);
-  const existing = await UserMissionRepository.findForMission(userId, missionId);
+  const existing = await UserMissionRepository.find(userId, missionId, periodKey);
   if (existing) {
     existing.progress = 0;
     existing.target = dto.target;
@@ -297,19 +323,20 @@ export const joinMission = async (
     progress: 0,
     target: dto.target,
     status: "IN_PROGRESS",
-    period_key: PERIOD,
+    period_key: periodKey,
     category: dto.bucket,
     meta,
   });
   return { ...dto, status: "IN_PROGRESS", progress: 0 };
 };
 
-/** Cancel a running mission — the row is removed and it returns to AVAILABLE. */
+/** Cancel a running mission on a track — the row is removed (back to AVAILABLE). */
 export const cancelMission = async (
   userId: string,
-  missionId: string
+  missionId: string,
+  periodKey: string = PERIOD
 ): Promise<void> => {
-  const um = await UserMissionRepository.findForMission(userId, missionId);
+  const um = await UserMissionRepository.find(userId, missionId, periodKey);
   if (!um) throw new AppError("Mission not started", 404);
   if (um.status === "CLAIMED") {
     throw new AppError("A claimed mission can't be cancelled", 409);
@@ -318,15 +345,16 @@ export const cancelMission = async (
 };
 
 /**
- * Claim a COMPLETED mission. Grants the reward in gamru (so it lands in the
- * player's Special Bonuses) and marks the local participation CLAIMED.
+ * Claim a COMPLETED mission on a track. Grants the reward in gamru (so it lands
+ * in the player's Special Bonuses) and marks the local participation CLAIMED.
  */
 export const claimMission = async (
   userId: string,
   email: string,
-  missionId: string
+  missionId: string,
+  periodKey: string = PERIOD
 ): Promise<{ reward_label: string }> => {
-  const um = await UserMissionRepository.findForMission(userId, missionId);
+  const um = await UserMissionRepository.find(userId, missionId, periodKey);
   if (!um) throw new AppError("Mission not started", 404);
   if (um.status === "CLAIMED") {
     throw new AppError("Mission reward already claimed", 409);
