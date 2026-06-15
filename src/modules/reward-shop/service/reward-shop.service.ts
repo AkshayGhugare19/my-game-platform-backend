@@ -240,22 +240,6 @@ const toPurchaseView = (p: RewardPurchase): PurchaseView => ({
   createdAt: new Date(p.created_at).toISOString(),
 });
 
-const toBoosterView = (p: RewardPurchase, now: Date): BoosterView => ({
-  id: p.id,
-  productId: p.product_id,
-  name: p.product_name,
-  image: p.image,
-  kind: (p.booster_kind as BoosterKind) ?? "generic",
-  multiplier: Number(p.multiplier ?? 1),
-  tokenCost: Number(p.token_cost ?? 0),
-  tier: p.tier,
-  expiresAt: p.expires_at ? new Date(p.expires_at).toISOString() : null,
-  secondsRemaining: p.expires_at
-    ? Math.max(0, Math.round((new Date(p.expires_at).getTime() - now.getTime()) / 1000))
-    : null,
-  createdAt: new Date(p.created_at).toISOString(),
-});
-
 /* ────────────────────────────────────────────────────────────────────────
  * Public service API
  * ──────────────────────────────────────────────────────────────────────── */
@@ -391,40 +375,156 @@ export const buyProduct = async (
   };
 };
 
+interface GamruRewardRow {
+  id?: string;
+  reward?: string | null;
+  reward_type?: string | null;
+  gamification_source?: string | null;
+  granted_date?: string | null;
+  created_at?: string | null;
+  status?: string | null;
+}
+
+/** gamru records every reward-shop buy as a `reward-shop` reward-ledger row. */
+const isShopReward = (r: GamruRewardRow): boolean =>
+  String(r.gamification_source ?? "") === "reward-shop" ||
+  String(r.reward_type ?? "") === "reward_shop_purchase";
+
+/** Parse the gamru buy label `"Name ×2 — tokens 400"` → name / qty / tokens. */
+const parseRewardLabel = (
+  label: string
+): { name: string; qty: number; tokens: number } => {
+  const TOK = " — tokens ";
+  const sep = label.lastIndexOf(TOK);
+  let name = sep >= 0 ? label.slice(0, sep) : label;
+  const tokens = sep >= 0 ? Number(label.slice(sep + TOK.length)) || 0 : 0;
+  let qty = 1;
+  const m = name.match(/\s×(\d+)$/);
+  if (m) {
+    qty = Number(m[1]) || 1;
+    name = name.replace(/\s×\d+$/, "");
+  }
+  return { name: name.trim() || "Purchase", qty, tokens };
+};
+
+/**
+ * Shop history comes from gamru's reward ledger — the single source of truth
+ * that captures EVERY purchase (made via this page OR the embedded widget),
+ * so both surfaces show the same complete history. (The local
+ * `reward_purchases` table only mirrors page buys, so it is no longer the
+ * history source; it still backs boosters, which need expiry tracking gamru
+ * doesn't keep.) Purchase names are matched back to the live catalog for the
+ * product image / category / tier.
+ */
 export const getHistory = async (
-  userId: string,
+  email: string,
   page = 1,
   limit = 10
 ): Promise<Paginated<PurchaseView>> => {
-  const { rows, count } = await RewardPurchaseRepository.paginateByUser(
-    userId,
-    page,
-    limit
-  );
-  return {
-    data: rows.map(toPurchaseView),
-    pagination: {
-      total: count,
-      page,
-      limit,
-      totalPages: Math.max(1, Math.ceil(count / limit)),
-    },
-  };
+  const res = await gamruUserProfileData(email);
+  if (!res.ok || !res.body) {
+    throw new AppError("Shop history is temporarily unavailable", 503);
+  }
+  const tokens = Number(res.body.tokens ?? 0);
+
+  const rawCatalog = (res.body.gamification?.reward_shop ??
+    []) as GamruRewardShopRow[];
+  const byName = new Map<string, RewardProduct>();
+  rawCatalog.forEach((r) => {
+    if (r.name) byName.set(r.name.trim().toLowerCase(), normalize(r, tokens));
+  });
+
+  const rewards = (res.body.gamification?.rewards ?? []) as GamruRewardRow[];
+  const purchases: PurchaseView[] = rewards
+    .filter(isShopReward)
+    .map((r) => {
+      const { name, qty, tokens: cost } = parseRewardLabel(
+        String(r.reward ?? "")
+      );
+      const product = byName.get(name.toLowerCase());
+      const created = r.granted_date ?? r.created_at;
+      return {
+        id: String(r.id ?? ""),
+        productId: product?.id ?? "",
+        productName: name,
+        image: product?.image ?? null,
+        category: product?.category ?? "product",
+        tier: product?.tier ?? null,
+        tokenCost: cost,
+        quantity: qty,
+        multiplier: product?.booster?.multiplier ?? null,
+        boosterKind: product?.booster?.kind ?? null,
+        durationMinutes: product?.booster?.durationMinutes ?? null,
+        expiresAt: null,
+        status: String(r.status ?? "GRANTED"),
+        createdAt: created
+          ? new Date(created).toISOString()
+          : new Date().toISOString(),
+      };
+    });
+
+  return paginateArray(purchases, page, limit);
 };
 
+/**
+ * Owned boosters, sourced from gamru's reward ledger — the same complete
+ * record [[getHistory]] reads, so the page and the embedded widget list the
+ * same boosters regardless of where they were bought. A booster is a purchase
+ * whose product is in the catalog's Booster category; its multiplier / kind /
+ * image come from that catalog product. gamru doesn't track activation/expiry,
+ * so these are shown as owned (no countdown). The local `reward_purchases`
+ * table still backs `getActiveBoostMultiplier`, which applies the live earning
+ * boost for page-bought boosters within their duration.
+ */
 export const getBoosters = async (
-  userId: string,
+  email: string,
   page = 1,
   limit = 12
 ): Promise<Paginated<BoosterView>> => {
-  const now = new Date();
-  await RewardPurchaseRepository.expireStale(userId, now);
-  const rows = await RewardPurchaseRepository.activeBoosters(userId, now);
-  return paginateArray(
-    rows.map((r) => toBoosterView(r, now)),
-    page,
-    limit
-  );
+  const res = await gamruUserProfileData(email);
+  if (!res.ok || !res.body) {
+    throw new AppError("Boosters are temporarily unavailable", 503);
+  }
+  const tokens = Number(res.body.tokens ?? 0);
+
+  const rawCatalog = (res.body.gamification?.reward_shop ??
+    []) as GamruRewardShopRow[];
+  const boosterByName = new Map<string, RewardProduct>();
+  rawCatalog.forEach((r) => {
+    if (!r.name) return;
+    const p = normalize(r, tokens);
+    if (p.category === "booster") {
+      boosterByName.set(r.name.trim().toLowerCase(), p);
+    }
+  });
+
+  const rewards = (res.body.gamification?.rewards ?? []) as GamruRewardRow[];
+  const boosters = rewards
+    .filter(isShopReward)
+    .map((r): BoosterView | null => {
+      const { name, tokens: cost } = parseRewardLabel(String(r.reward ?? ""));
+      const product = boosterByName.get(name.toLowerCase());
+      if (!product || !product.booster) return null;
+      const created = r.granted_date ?? r.created_at;
+      return {
+        id: String(r.id ?? ""),
+        productId: product.id,
+        name,
+        image: product.image,
+        kind: product.booster.kind,
+        multiplier: product.booster.multiplier,
+        tokenCost: cost,
+        tier: product.tier,
+        expiresAt: null,
+        secondsRemaining: null,
+        createdAt: created
+          ? new Date(created).toISOString()
+          : new Date().toISOString(),
+      };
+    })
+    .filter((b): b is BoosterView => b !== null);
+
+  return paginateArray(boosters, page, limit);
 };
 
 /**

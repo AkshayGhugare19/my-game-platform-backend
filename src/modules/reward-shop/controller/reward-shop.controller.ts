@@ -56,8 +56,9 @@ export const history = async (
   res: Response
 ): Promise<void> => {
   try {
+    const email = await requireEmail(req.user!.id);
     const { page, limit } = readPageParams(req.query);
-    const data = await getHistory(req.user!.id, page, limit);
+    const data = await getHistory(email, page, limit);
     successResponse(res, 200, "Shop history", data);
   } catch (e) {
     fail(res, e, "Failed to load shop history");
@@ -69,8 +70,9 @@ export const boosters = async (
   res: Response
 ): Promise<void> => {
   try {
+    const email = await requireEmail(req.user!.id);
     const { page, limit } = readPageParams(req.query, 12);
-    const data = await getBoosters(req.user!.id, page, limit);
+    const data = await getBoosters(email, page, limit);
     successResponse(res, 200, "My boosters", data);
   } catch (e) {
     fail(res, e, "Failed to load boosters");
