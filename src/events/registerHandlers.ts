@@ -59,7 +59,15 @@ export const registerEventHandlers = (): void => {
       (m.gameId as string | undefined) ??
       (m.name as string | undefined) ??
       null;
-    await advanceForActivity(p.userId, { stake, win, winAmount, gameKey });
+    // Mission/bundle context set when the game was launched from a mission or
+    // bundle card (carried in the activity meta) — advances only that track.
+    const missionId = (m.mission as string | undefined) ?? null;
+    const bundleId = (m.bundle as string | undefined) ?? null;
+    await advanceForActivity(
+      p.userId,
+      { stake, win, winAmount, gameKey },
+      { missionId, bundleId }
+    );
   });
 
   bus.on<StreakUpdatedPayload>(EVENTS.STREAK_UPDATED, async (p) => {

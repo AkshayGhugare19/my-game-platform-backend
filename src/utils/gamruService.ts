@@ -773,6 +773,26 @@ export const gamru = {
       del(`/gamification/${resource}/${id}`, token),
   },
 
+  /**
+   * /api/gamification/:feature/:id/participants — record a player's
+   * participation in a mission / mission-bundle (clientAuth, S2S). Keyed by the
+   * gamru entity id (mission id for the standalone tab, bundle id for a bundle)
+   * so the operator console's "Participated" count reflects joins, with mission
+   * and bundle counts kept independent.
+   */
+  participation: {
+    record: (
+      feature: "missions" | "mission-bundles",
+      entityId: string,
+      data: {
+        email: string;
+        external_id?: string;
+        name?: string | null;
+        status?: string;
+      }
+    ) => post(`/gamification/${feature}/${entityId}/participants`, data),
+  },
+
   /** /api/tournament-leaderboard — push player scores to the backoffice. */
   tournamentLeaderboard: {
     submitScore: (

@@ -18,7 +18,7 @@
  *    on the profile payload).
  */
 import { AppError } from "../../../utils/AppError.ts";
-import {
+import gamru, {
   gamruUserProfileData,
   type GamruMission,
   type GamruMissionBundle,
@@ -270,24 +270,50 @@ export const getBundle = async (
 // in the bundle can run at once). Gameplay advances whatever is IN_PROGRESS on
 // any track, so these progress independently of the same mission elsewhere.
 
-export const joinBundleMission = (
+export const joinBundleMission = async (
   userId: string,
   email: string,
   bundleId: string,
   missionId: string
-): Promise<MissionDTO> =>
-  joinMission(userId, email, missionId, {
+): Promise<MissionDTO> => {
+  const dto = await joinMission(userId, email, missionId, {
     periodKey: bundlePeriodKey(bundleId),
     exclusive: false,
   });
+  // Sync participation against the BUNDLE id (not the mission), so the operator
+  // console's bundle "Participated" count reflects joins and never bleeds into
+  // the standalone mission's count. Fire-and-forget.
+  void gamru.participation
+    .record("mission-bundles", bundleId, {
+      email,
+      external_id: userId,
+      status: "IN_PROGRESS",
+    })
+    .catch(() => {});
+  return dto;
+};
 
-export const claimBundleMission = (
+export const claimBundleMission = async (
   userId: string,
   email: string,
   bundleId: string,
   missionId: string
-): Promise<{ reward_label: string }> =>
-  claimMission(userId, email, missionId, bundlePeriodKey(bundleId));
+): Promise<{ reward_label: string }> => {
+  const result = await claimMission(
+    userId,
+    email,
+    missionId,
+    bundlePeriodKey(bundleId)
+  );
+  void gamru.participation
+    .record("mission-bundles", bundleId, {
+      email,
+      external_id: userId,
+      status: "CLAIMED",
+    })
+    .catch(() => {});
+  return result;
+};
 
 export const cancelBundleMission = (
   userId: string,

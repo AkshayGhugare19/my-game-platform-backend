@@ -30,6 +30,14 @@ import UserMissionRepository from "../model/user-mission.repository.ts";
 /** gamru missions are lifetime/special — one participation row per mission. */
 const PERIOD = "GAMRU";
 
+/**
+ * A bundle's participation track key — mirrors bundlePeriodKey in the bundle
+ * engine (kept local here to avoid a circular import). Used to advance the
+ * RIGHT track when a play is attributed to a bundle.
+ */
+const bundlePeriodKey = (bundleId: string): string =>
+  ("B" + bundleId.replace(/-/g, "")).slice(0, 20);
+
 export type MissionStatus =
   | "AVAILABLE"
   | "IN_PROGRESS"
@@ -314,19 +322,33 @@ export const joinMission = async (
     existing.completed_at = null;
     existing.changed("meta", true);
     await existing.save();
-    return { ...dto, status: "IN_PROGRESS", progress: 0 };
+  } else {
+    await UserMissionRepository.create({
+      user_id: userId,
+      mission_id: missionId,
+      progress: 0,
+      target: dto.target,
+      status: "IN_PROGRESS",
+      period_key: periodKey,
+      category: dto.bucket,
+      meta,
+    });
   }
 
-  await UserMissionRepository.create({
-    user_id: userId,
-    mission_id: missionId,
-    progress: 0,
-    target: dto.target,
-    status: "IN_PROGRESS",
-    period_key: periodKey,
-    category: dto.bucket,
-    meta,
-  });
+  // Tell gamru the player joined, so the operator console's "Participated"
+  // count updates on join. Standalone track only — a mission joined inside a
+  // bundle is synced by the bundle engine against the BUNDLE id, so mission and
+  // bundle counts never cross-contaminate. Fire-and-forget.
+  if (periodKey === PERIOD) {
+    void gamru.participation
+      .record("missions", missionId, {
+        email,
+        external_id: userId,
+        status: "IN_PROGRESS",
+      })
+      .catch(() => {});
+  }
+
   return { ...dto, status: "IN_PROGRESS", progress: 0 };
 };
 
@@ -380,6 +402,17 @@ export const claimMission = async (
   um.status = "CLAIMED";
   await um.save();
 
+  // Reflect the claim on gamru's participation record (standalone track only).
+  if (periodKey === PERIOD) {
+    void gamru.participation
+      .record("missions", missionId, {
+        email,
+        external_id: userId,
+        status: "CLAIMED",
+      })
+      .catch(() => {});
+  }
+
   const meta = (um.meta as Record<string, unknown>) ?? {};
   return { reward_label: String(meta.reward_label ?? "Reward") };
 };
@@ -393,6 +426,10 @@ interface AdvanceOpts {
   amountValue: number;
   /** Game played, for the optional game sub-condition. */
   gameKey?: string | null;
+  /** The mission this play was launched for (from the mission/bundle card). */
+  missionId?: string | null;
+  /** The bundle, when the play was launched from a bundle card. */
+  bundleId?: string | null;
 }
 
 /**
@@ -405,8 +442,28 @@ const advanceUserMissions = async (
   kinds: string[],
   opts: AdvanceOpts
 ): Promise<void> => {
-  const { betSize, amountValue, gameKey } = opts;
-  const rows = await UserMissionRepository.listInProgress(userId);
+  const { betSize, amountValue, gameKey, missionId, bundleId } = opts;
+
+  // Which participation rows may this play advance? A mission can be IN_PROGRESS
+  // on more than one track — the standalone Missions tab ("GAMRU") and one or
+  // more bundle tracks. So we DON'T advance every copy (that moves them in
+  // lockstep). When the game was launched from a specific mission/bundle card,
+  // the activity carries that context and we advance ONLY that one track:
+  //   - bundle present → that bundle's track for the mission,
+  //   - mission only   → the standalone "GAMRU" track for the mission.
+  // With no context (a generic game play), fall back to the standalone track
+  // only — never bundle tracks.
+  let rows: UserMission[];
+  if (missionId) {
+    const periodKey = bundleId ? bundlePeriodKey(bundleId) : PERIOD;
+    const um = await UserMissionRepository.find(userId, missionId, periodKey);
+    rows = um && um.status === "IN_PROGRESS" ? [um] : [];
+  } else {
+    rows = (await UserMissionRepository.listInProgress(userId)).filter(
+      (r) => r.period_key === PERIOD
+    );
+  }
+
   for (const um of rows) {
     const meta = (um.meta as Record<string, unknown>) ?? {};
     const ot = String(meta.objective_type ?? "");
@@ -467,18 +524,24 @@ export interface PlaySignal {
  */
 export const advanceForActivity = async (
   userId: string,
-  signal: PlaySignal
+  signal: PlaySignal,
+  context: { missionId?: string | null; bundleId?: string | null } = {}
 ): Promise<void> => {
+  const { missionId = null, bundleId = null } = context;
   await advanceUserMissions(userId, ["wager", "bet_count"], {
     betSize: signal.stake,
     amountValue: signal.stake,
     gameKey: signal.gameKey,
+    missionId,
+    bundleId,
   });
   if (signal.win) {
     await advanceUserMissions(userId, ["win"], {
       betSize: signal.stake,
       amountValue: signal.winAmount,
       gameKey: signal.gameKey,
+      missionId,
+      bundleId,
     });
   }
 };
