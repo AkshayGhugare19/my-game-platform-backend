@@ -15,4 +15,19 @@ router.get("/history", auth, getHistory);
 router.get("/:id", auth, getOne);
 router.post("/:id/score", auth, submitScore);
 
+// Swagger payload (body isn't Joi-validated — docs-only).
+(router as Router & { docs?: Record<string, unknown> }).docs = {
+  "POST /:id/score": {
+    requestSchema: {
+      type: "object",
+      required: ["points"],
+      properties: {
+        points: { type: "number", example: 150, description: "points earned this play" },
+        game: { type: "string", example: "aviator", description: "game key, optional" },
+      },
+    },
+    requestExample: { points: 150, game: "aviator" },
+  },
+};
+
 export default router;

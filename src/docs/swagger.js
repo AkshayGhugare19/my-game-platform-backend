@@ -8,7 +8,10 @@ const ROUTE_GROUPS = [
   { prefix: "/api/activity", tag: "Activity", router: def(require("../route/activity.routes")) },
   { prefix: "/api/missions", tag: "Missions", router: def(require("../route/mission.routes")) },
   { prefix: "/api/mission-bundles", tag: "Mission Bundles", router: def(require("../route/missionBundle.routes")) },
+  { prefix: "/api/tournaments", tag: "Tournaments", router: def(require("../route/tournament.routes")) },
   { prefix: "/api/rewards", tag: "Rewards", router: def(require("../route/reward.routes")) },
+  { prefix: "/api/reward-shop", tag: "Reward Shop", router: def(require("../route/reward-shop.routes")) },
+  { prefix: "/api/wallet", tag: "Wallet", router: def(require("../route/wallet.routes")) },
   { prefix: "/api/leaderboard", tag: "Leaderboard", router: def(require("../route/leaderboard.routes")) },
   { prefix: "/api/notifications", tag: "Notifications", router: def(require("../route/notification.routes")) },
   { prefix: "/api/levels", tag: "Config", router: require("../route/config.routes").levelsRouter },
@@ -146,6 +149,23 @@ function buildOperation({
       content: { "application/json": { schema: j2s(joiBody).swagger } },
     };
     op.responses[422] = { $ref: "#/components/responses/ValidationError" };
+  } else if (
+    override &&
+    override.requestSchema &&
+    ["post", "put", "patch"].includes(method)
+  ) {
+    // Manual payload for endpoints whose body isn't Joi-validated (docs-only).
+    op.requestBody = {
+      required: override.requestRequired !== false,
+      content: {
+        "application/json": {
+          schema: override.requestSchema,
+          ...(override.requestExample
+            ? { example: override.requestExample }
+            : {}),
+        },
+      },
+    };
   }
 
   if (override?.responseSchema) {
