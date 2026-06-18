@@ -10,6 +10,7 @@ import {
   getTournament,
   recordScore,
   getTournamentHistory,
+  claimTournament,
 } from "../service/tournament.service.ts";
 
 export const getMyTournaments = async (
@@ -70,5 +71,22 @@ export const submitScore = async (
   } catch (e) {
     if (e instanceof AppError) errorResponse(res, e.statusCode, e.message);
     else errorResponse(res, 500, "Failed to record score");
+  }
+};
+
+export const claim = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const data = await claimTournament(
+      req.user!.id,
+      req.user!.email,
+      req.params.id
+    );
+    successResponse(res, 200, "Tournament prize claimed", data);
+  } catch (e) {
+    if (e instanceof AppError) errorResponse(res, e.statusCode, e.message);
+    else errorResponse(res, 500, "Failed to claim tournament prize");
   }
 };

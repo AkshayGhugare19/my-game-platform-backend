@@ -83,6 +83,7 @@ export const cancelMission = async (
   try {
     await cancelBundleMission(
       req.user!.id,
+      req.user!.email,
       req.params.bundleId,
       req.params.missionId
     );

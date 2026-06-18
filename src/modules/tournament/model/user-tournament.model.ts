@@ -36,10 +36,18 @@ export class UserTournament extends Model<
   declare tournament_industry: CreationOptional<string | null>;
   declare tournament_image: CreationOptional<string | null>;
   declare last_played_at: CreationOptional<Date | null>;
-  /** Set once the tournament has ended and prizes were distributed. */
+  /** GAMRU marked this player a prize winner (was: local wallet settled). */
   declare prize_awarded: CreationOptional<boolean>;
-  /** Prize-pool share credited to this player's wallet when they finished top-3. */
+  /** Prize-pool share GAMRU computed for this player (claimed via GAMRU ledger). */
   declare prize_amount: CreationOptional<number>;
+  /** Last leaderboard rank GAMRU reported. */
+  declare rank: CreationOptional<number | null>;
+  /** REGISTERED | RANKED | WON | CLAIMED (mirrors GAMRU). */
+  declare status: CreationOptional<string | null>;
+  /** When the player claimed the prize (in GAMRU's reward ledger). */
+  declare claimed_at: CreationOptional<Date | null>;
+  /** When this cache row was last mirrored from a GAMRU response. */
+  declare last_synced_at: CreationOptional<Date | null>;
   declare readonly created_at: CreationOptional<Date>;
   declare readonly updated_at: CreationOptional<Date>;
 }
@@ -60,6 +68,10 @@ UserTournament.init(
     last_played_at: { type: DataTypes.DATE, allowNull: true },
     prize_awarded: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     prize_amount: { type: DataTypes.FLOAT, allowNull: false, defaultValue: 0 },
+    rank: { type: DataTypes.INTEGER, allowNull: true },
+    status: { type: DataTypes.STRING(20), allowNull: true },
+    claimed_at: { type: DataTypes.DATE, allowNull: true },
+    last_synced_at: { type: DataTypes.DATE, allowNull: true },
     created_at: DataTypes.DATE,
     updated_at: DataTypes.DATE,
   },

@@ -276,10 +276,7 @@ export const joinBundleMission = async (
   bundleId: string,
   missionId: string
 ): Promise<MissionDTO> => {
-  const dto = await joinMission(userId, email, missionId, {
-    periodKey: bundlePeriodKey(bundleId),
-    exclusive: false,
-  });
+  const dto = await joinMission(userId, email, missionId, { bundleId });
   // Sync participation against the BUNDLE id (not the mission), so the operator
   // console's bundle "Participated" count reflects joins and never bleeds into
   // the standalone mission's count. Fire-and-forget.
@@ -299,12 +296,7 @@ export const claimBundleMission = async (
   bundleId: string,
   missionId: string
 ): Promise<{ reward_label: string }> => {
-  const result = await claimMission(
-    userId,
-    email,
-    missionId,
-    bundlePeriodKey(bundleId)
-  );
+  const result = await claimMission(userId, email, missionId, bundleId);
   void gamru.participation
     .record("mission-bundles", bundleId, {
       email,
@@ -317,7 +309,7 @@ export const claimBundleMission = async (
 
 export const cancelBundleMission = (
   userId: string,
+  email: string,
   bundleId: string,
   missionId: string
-): Promise<void> =>
-  cancelMission(userId, missionId, bundlePeriodKey(bundleId));
+): Promise<void> => cancelMission(userId, email, missionId, bundleId);

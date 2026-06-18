@@ -73,7 +73,7 @@ export const cancel = async (
   res: Response
 ): Promise<void> => {
   try {
-    await cancelMission(req.user!.id, req.params.id);
+    await cancelMission(req.user!.id, req.user!.email, req.params.id);
     successResponse(res, 200, "Mission cancelled", null);
   } catch (e) {
     if (e instanceof AppError) errorResponse(res, e.statusCode, e.message);

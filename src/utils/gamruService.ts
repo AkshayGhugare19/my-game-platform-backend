@@ -317,6 +317,104 @@ export interface GamruAddXpPointUserResponse {
   [key: string]: unknown;
 }
 
+/* ── Integration API DTOs (GAMRU is the source of truth) ──────────────────── */
+
+/** A mission with the player's GAMRU-computed progress merged in. */
+export interface GamruIntMission {
+  id: string;
+  name: string;
+  description: string | null;
+  category: string;
+  bucket: "Casino" | "Sport";
+  vip: boolean;
+  duration_days: number | null;
+  large_image: string | null;
+  status: "AVAILABLE" | "IN_PROGRESS" | "COMPLETED" | "CLAIMED";
+  objective_type: string;
+  measure: string;
+  target: number;
+  progress: number;
+  condition: string;
+  game_category: string | null;
+  min_bet: number | null;
+  min_multiplier: number | null;
+  bet_currency: string;
+  games: string[];
+  start_date: string | null;
+  end_date: string | null;
+  reward_type: string;
+  reward_amount: number;
+  reward_label: string;
+  max_bonus: number | null;
+  bonus_wagering: string;
+  deposit_required: boolean;
+  wagering_required: boolean;
+  more_details: string | null;
+  tags: string[];
+  completed_at: string | null;
+  claimed_at: string | null;
+}
+
+export interface GamruIntTournament {
+  id: string;
+  name: string;
+  description: string | null;
+  industry: string;
+  tournament_type: string | null;
+  games: string[];
+  period: string | null;
+  large_image: string | null;
+  small_image: string | null;
+  min_bet: number | null;
+  max_bets: number | null;
+  buy_in: number | null;
+  start_date: string | null;
+  end_date: string | null;
+  leaderboard_size: number | null;
+  prize_pool: number | null;
+  eligibility_type: string | null;
+  segment: string | null;
+  tags: string[];
+  state: "SCHEDULED" | "IN_PROGRESS" | "ENDED";
+}
+
+export interface GamruIntLeaderboardEntry {
+  rank: number;
+  email: string;
+  name: string;
+  score: number;
+  is_me: boolean;
+  prize: number;
+  /** Whether this player already claimed their prize (server-authoritative). */
+  claimed: boolean;
+}
+
+export interface GamruIntTournamentProgress {
+  tournament_id: string;
+  registered: boolean;
+  score: number;
+  plays: number;
+  rank: number | null;
+  prize_amount: number;
+  prize_awarded: boolean;
+  claimed: boolean;
+  status: string | null;
+}
+
+export interface GamruIntTournamentHistory {
+  tournament_id: string;
+  name: string;
+  industry: string;
+  image: string | null;
+  plays: number;
+  games_played: Array<{ game: string; plays: number }>;
+  xp: number;
+  rank: number;
+  prize: number;
+  claimed: boolean;
+  last_played_at: string | null;
+}
+
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 interface RequestOptions {
@@ -504,6 +602,22 @@ const patch = <T = unknown>(
 
 const del = <T = unknown>(path: string, token?: string) =>
   request<T>("DELETE", path, { token });
+
+/**
+ * Peel gamru's `{ success, message, data }` envelope to the inner `data`,
+ * leaving the `GamruResult` ok/status/error in place. Used by the integration
+ * client so callers get the typed payload directly. Never throws.
+ */
+const unwrap = async <T = unknown>(
+  res: Promise<GamruResult>
+): Promise<GamruResult<T>> => {
+  const r = await res;
+  if (!r.ok) return r as GamruResult<T>;
+  const raw = r.body as Record<string, unknown> | null | undefined;
+  const data =
+    raw && typeof raw === "object" && "data" in raw ? raw.data : raw;
+  return { ok: r.ok, status: r.status, error: r.error, body: data as T };
+};
 
 type Q = RequestOptions["query"];
 
@@ -801,6 +915,103 @@ export const gamru = {
     ) => post(`/tournament-leaderboard/${tournamentId}/score`, data),
     getStandings: (tournamentId: string, token: string) =>
       get(`/tournament-leaderboard/${tournamentId}`, undefined, token),
+  },
+
+  /**
+   * GAMRU mission & tournament progression API — the single source of truth.
+   * Top-level resource paths (`/api/missions`, `/api/tournaments`, `/api/users`,
+   * `/api/activity` — no `/integration` prefix). The player is resolved by
+   * `email`; `external_id` is this platform's user id (kept for audit / reverse
+   * lookup). All progression logic lives in GAMRU; this platform only forwards
+   * events and caches what it returns. Every method returns the unwrapped `data`.
+   */
+  integration: {
+    missions: {
+      list: (email: string) =>
+        unwrap<{ missions: GamruIntMission[] }>(get("/missions", { email })),
+      get: (id: string, email: string, bundleId?: string | null) =>
+        unwrap<GamruIntMission>(
+          get(`/missions/${id}`, { email, bundleId: bundleId ?? undefined })
+        ),
+      join: (
+        id: string,
+        data: { email: string; external_id?: string; bundleId?: string | null }
+      ) => unwrap<GamruIntMission>(post(`/missions/${id}/join`, data)),
+      cancel: (
+        id: string,
+        data: { email: string; bundleId?: string | null }
+      ) => unwrap<{ cancelled: boolean }>(post(`/missions/${id}/cancel`, data)),
+      progress: (id: string, email: string, bundleId?: string | null) =>
+        unwrap<GamruIntMission>(
+          get(`/missions/${id}/progress`, {
+            email,
+            bundleId: bundleId ?? undefined,
+          })
+        ),
+      claim: (id: string, data: { email: string; bundleId?: string | null }) =>
+        unwrap<{ reward_label: string; mission: GamruIntMission }>(
+          post(`/missions/${id}/claim`, data)
+        ),
+    },
+    tournaments: {
+      list: (email: string) =>
+        unwrap<{ tournaments: GamruIntTournament[] }>(
+          get("/tournaments", { email })
+        ),
+      get: (id: string, email: string) =>
+        unwrap<{
+          tournament: GamruIntTournament;
+          leaderboard: GamruIntLeaderboardEntry[];
+        }>(get(`/tournaments/${id}`, { email })),
+      join: (id: string, data: { email: string; external_id?: string }) =>
+        unwrap<GamruIntTournamentProgress>(
+          post(`/tournaments/${id}/join`, data)
+        ),
+      progress: (id: string, email: string) =>
+        unwrap<GamruIntTournamentProgress>(
+          get(`/tournaments/${id}/progress`, { email })
+        ),
+      leaderboard: (id: string, email: string, size?: number | null) =>
+        unwrap<{ leaderboard: GamruIntLeaderboardEntry[] }>(
+          get(`/tournaments/${id}/leaderboard`, {
+            email,
+            size: size ?? undefined,
+          })
+        ),
+      score: (
+        id: string,
+        data: { email: string; points: number; game?: string | null; external_id?: string }
+      ) =>
+        unwrap<{ tournament_id: string; score: number; applied: number }>(
+          post(`/tournaments/${id}/score`, data)
+        ),
+      claim: (id: string, data: { email: string }) =>
+        unwrap<{ prize: number }>(post(`/tournaments/${id}/claim`, data)),
+    },
+    users: {
+      missions: (userId: string, email: string) =>
+        unwrap<{ missions: GamruIntMission[] }>(
+          get(`/users/${userId}/missions`, { email })
+        ),
+      tournaments: (userId: string, email: string) =>
+        unwrap<{ tournaments: GamruIntTournamentHistory[] }>(
+          get(`/users/${userId}/tournaments`, { email })
+        ),
+    },
+    /** Forward a gameplay / login event so GAMRU advances progress. */
+    activity: (data: {
+      email: string;
+      external_id?: string;
+      kind?: "play" | "login";
+      stake?: number;
+      win?: boolean;
+      winAmount?: number;
+      gameKey?: string | null;
+      missionId?: string | null;
+      bundleId?: string | null;
+      tournamentId?: string | null;
+      points?: number;
+    }) => unwrap<{ missions: GamruIntMission[] }>(post("/activity", data)),
   },
 
   /** /api/campaigns */

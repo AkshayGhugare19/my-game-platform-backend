@@ -1,19 +1,15 @@
 /**
- * Gamru-backed mission engine.
+ * Gamru-backed mission engine — THIN CONSUMER.
  *
- * Missions are AUTHORED in gamru (the backoffice) and fetched live per request
- * from the player's gamru profile payload (`gamification.missions`). This
- * engine owns only the per-player PARTICIPATION that gamru does not store:
- * Join, progress, claim and cancel — tracked in the local `user_missions`
- * table, keyed by the gamru mission uuid.
+ * GAMRU is the single source of truth for missions: it authors the definitions
+ * AND now computes all per-player progress (join, gameplay progress, complete,
+ * claim, cancel) via the `/api/integration/missions/*` API. This module no
+ * longer calculates anything — it forwards events to GAMRU and mirrors the
+ * response into the local `user_missions` table, which is a read-through CACHE
+ * / audit mirror (keyed by the gamru mission uuid + participation track).
  *
- * The BetFury flow this implements:
- *  - a player JOINs a mission (one Casino + one Sport mission at a time; joining
- *    another in the same bucket cancels the current one),
- *  - gameplay events advance progress against the mission's objective,
- *  - on completion the player CLAIMs → the reward is granted in gamru and lands
- *    in their "Special Bonuses",
- *  - a player may CANCEL a running mission (progress reset).
+ * The cache lets the bundle layer and history render from local rows and keeps
+ * the UI rendering if GAMRU briefly hiccups; it is never the source of truth.
  */
 import { AppError } from "../../../utils/AppError.ts";
 import { bus } from "../../../events/eventBus.ts";
@@ -23,18 +19,18 @@ import gamru, {
   type GamruMission,
   type GamruMissionData,
   type GamruWidgetsConfig,
+  type GamruIntMission,
 } from "../../../utils/gamruService.ts";
-import UserMission from "../model/user-mission.model.ts";
+import UserMission, {
+  type UserMissionStatus,
+} from "../model/user-mission.model.ts";
 import UserMissionRepository from "../model/user-mission.repository.ts";
+import UserRepository from "../../user/model/user.repository.ts";
 
-/** gamru missions are lifetime/special — one participation row per mission. */
+/** gamru missions are lifetime/special — one participation row per track. */
 const PERIOD = "GAMRU";
 
-/**
- * A bundle's participation track key — mirrors bundlePeriodKey in the bundle
- * engine (kept local here to avoid a circular import). Used to advance the
- * RIGHT track when a play is attributed to a bundle.
- */
+/** A bundle's participation track key — mirrors the bundle engine. */
 const bundlePeriodKey = (bundleId: string): string =>
   ("B" + bundleId.replace(/-/g, "")).slice(0, 20);
 
@@ -47,38 +43,8 @@ export type MissionStatus =
 /** Exclusivity bucket: everything that isn't Sport shares the Casino slot. */
 export type MissionBucket = "Casino" | "Sport";
 
-export interface MissionDTO {
-  id: string;
-  name: string;
-  description: string | null;
-  category: string; // display category (Slots / Originals / Sport / …)
-  bucket: MissionBucket;
-  vip: boolean;
-  duration_days: number | null;
-  large_image: string | null;
-  status: MissionStatus;
-  objective_type: string;
-  measure: string; // "count" | "amount"
-  target: number;
-  progress: number;
-  condition: string; // human label, e.g. "Wager $15 000"
-  game_category: string | null;
-  min_bet: number | null;
-  min_multiplier: number | null;
-  bet_currency: string;
-  games: string[];
-  start_date: string | null;
-  end_date: string | null;
-  reward_type: string;
-  reward_amount: number;
-  reward_label: string; // e.g. "50 Bonus Bets x $2"
-  max_bonus: number | null;
-  bonus_wagering: string;
-  deposit_required: boolean;
-  wagering_required: boolean;
-  more_details: string | null;
-  tags: string[];
-}
+/** The mission shape returned to the games frontend === GAMRU's integration DTO. */
+export type MissionDTO = GamruIntMission;
 
 export interface MissionBranding {
   banner_desktop: string | null;
@@ -111,9 +77,7 @@ const bucketFor = (category: string): MissionBucket =>
   /sport/i.test(category) ? "Sport" : "Casino";
 
 const toGames = (raw: unknown): string[] => {
-  const list = Array.isArray(raw)
-    ? raw
-    : String(raw ?? "").split(",");
+  const list = Array.isArray(raw) ? raw : String(raw ?? "").split(",");
   return Array.from(
     new Set(list.map((s) => String(s).trim()).filter(Boolean))
   );
@@ -144,7 +108,7 @@ const conditionLabel = (d: GamruMissionData, target: number): string => {
   return measure === "amount" ? `${verb} $${target}` : `${verb} ${target}`;
 };
 
-const statusFor = (um: UserMission | undefined): MissionStatus => {
+const statusFor = (um: UserMission | undefined | null): MissionStatus => {
   if (!um) return "AVAILABLE";
   if (um.status === "IN_PROGRESS") return "IN_PROGRESS";
   if (um.status === "COMPLETED") return "COMPLETED";
@@ -152,7 +116,12 @@ const statusFor = (um: UserMission | undefined): MissionStatus => {
   return "AVAILABLE";
 };
 
-export const mapMission = (m: GamruMission, um?: UserMission): MissionDTO => {
+/**
+ * Map a gamru catalog mission + the player's local cache row into a MissionDTO.
+ * Still used by the bundle engine (which merges per-bundle cache rows). The
+ * cache row reflects GAMRU's progress (it is mirrored on every mutation/play).
+ */
+export const mapMission = (m: GamruMission, um?: UserMission | null): MissionDTO => {
   const d: GamruMissionData = m.data ?? {};
   const category = toStr(d.category) ?? "Casino";
   const target = toNum(d.objective_target) ?? 0;
@@ -187,6 +156,8 @@ export const mapMission = (m: GamruMission, um?: UserMission): MissionDTO => {
     wagering_required: Boolean(d.wagering_required),
     more_details: toStr(d.more_details),
     tags: Array.isArray(m.tags) ? m.tags : [],
+    completed_at: um?.completed_at ? new Date(um.completed_at).toISOString() : null,
+    claimed_at: um?.claimed_at ? new Date(um.claimed_at).toISOString() : null,
   };
 };
 
@@ -197,8 +168,15 @@ export const mapBranding = (
   banner_mobile: toStr(cfg?.missions_banner_mobile),
 });
 
-/** Snapshot the mission's objective onto the participation row (for progress). */
-const objectiveSnapshot = (dto: MissionDTO): Record<string, unknown> => ({
+/* ── Local cache mirror of GAMRU progress ─────────────────────────────────── */
+
+const resolveEmail = async (userId: string): Promise<string | null> => {
+  const u = await UserRepository.findByPk(userId);
+  return u?.email ?? null;
+};
+
+/** Objective + display snapshot from a GAMRU DTO (for cache + history). */
+const metaFromDto = (dto: MissionDTO): Record<string, unknown> => ({
   objective_type: dto.objective_type,
   measure: dto.measure,
   min_bet: dto.min_bet,
@@ -215,48 +193,142 @@ const objectiveSnapshot = (dto: MissionDTO): Record<string, unknown> => ({
   condition: dto.condition,
 });
 
-/**
- * Fetch the live mission catalog from gamru for this player. Never throws on a
- * gamru outage — returns an empty catalog so the page still renders.
- */
-const loadCatalog = async (
-  email: string
-): Promise<{ missions: GamruMission[]; branding: MissionBranding }> => {
-  const res = await gamruUserProfileData(email);
-  if (!res.ok || !res.body) {
-    return { missions: [], branding: DEFAULT_BRANDING };
-  }
-  const missions = res.body.gamification?.missions ?? [];
-  return { missions, branding: mapBranding(res.body.widgets_config) };
+/** Reconstruct a DTO from a cache row when GAMRU is unreachable. */
+const dtoFromCacheRow = (um: UserMission): MissionDTO => {
+  const meta = (um.meta as Record<string, unknown>) ?? {};
+  return {
+    id: um.mission_id,
+    name: String(meta.name ?? "Mission"),
+    description: null,
+    category: String(meta.category ?? "Casino"),
+    bucket: (um.category as MissionBucket) ?? "Casino",
+    vip: false,
+    duration_days: null,
+    large_image: (meta.large_image as string | null) ?? null,
+    status: statusFor(um),
+    objective_type: String(meta.objective_type ?? "wager"),
+    measure: String(meta.measure ?? "amount"),
+    target: Number(um.target ?? 0),
+    progress: Number(um.progress ?? 0),
+    condition: String(meta.condition ?? ""),
+    game_category: (meta.game_category as string | null) ?? null,
+    min_bet: (meta.min_bet as number | null) ?? null,
+    min_multiplier: (meta.min_multiplier as number | null) ?? null,
+    bet_currency: "All Currencies",
+    games: Array.isArray(meta.games) ? (meta.games as string[]) : [],
+    start_date: null,
+    end_date: null,
+    reward_type: String(meta.reward_type ?? "bonus_cash"),
+    reward_amount: Number(meta.reward_amount ?? 0),
+    reward_label: String(meta.reward_label ?? "Reward"),
+    max_bonus: null,
+    bonus_wagering: "Excluded",
+    deposit_required: false,
+    wagering_required: false,
+    more_details: null,
+    tags: [],
+    completed_at: um.completed_at ? new Date(um.completed_at).toISOString() : null,
+    claimed_at: um.claimed_at ? new Date(um.claimed_at).toISOString() : null,
+  };
 };
 
 /**
- * Options for the participation-mutating operations. `periodKey` selects the
- * participation TRACK: the default "GAMRU" is the standalone Missions tab; a
- * different key (e.g. "BUNDLE") is an independent track that completes
- * separately. `exclusive` enforces the one-IN_PROGRESS-per-bucket rule within
- * that track.
+ * Mirror one GAMRU mission DTO into the local cache. AVAILABLE means the player
+ * has no participation → drop any stale row. Returns the status transition so
+ * the caller can emit the real-time progress/completion events.
  */
-export interface ParticipationOpts {
-  periodKey?: string;
-  exclusive?: boolean;
-}
+const syncMissionToCache = async (
+  userId: string,
+  dto: MissionDTO,
+  periodKey: string
+): Promise<{ prev: MissionStatus; next: MissionStatus }> => {
+  const existing = await UserMissionRepository.find(userId, dto.id, periodKey);
+  const prev = statusFor(existing);
 
-/** Catalog + the player's participation (for the given track) merged in. */
+  if (dto.status === "AVAILABLE") {
+    if (existing) await existing.destroy();
+    return { prev, next: "AVAILABLE" };
+  }
+
+  const patch = {
+    progress: dto.progress,
+    target: dto.target,
+    status: dto.status as UserMissionStatus,
+    category: dto.bucket,
+    meta: metaFromDto(dto),
+    completed_at: dto.completed_at ? new Date(dto.completed_at) : null,
+    claimed_at: dto.claimed_at ? new Date(dto.claimed_at) : null,
+    last_synced_at: new Date(),
+  };
+
+  if (existing) {
+    existing.set(patch);
+    existing.changed("meta", true);
+    await existing.save();
+  } else {
+    await UserMissionRepository.create({
+      user_id: userId,
+      mission_id: dto.id,
+      period_key: periodKey,
+      ...patch,
+    });
+  }
+  return { prev, next: dto.status };
+};
+
+/** Emit the websocket / notification events for a mirrored transition. */
+const emitTransition = (
+  userId: string,
+  dto: MissionDTO,
+  prev: MissionStatus,
+  next: MissionStatus
+): void => {
+  if (next === "COMPLETED" && prev !== "COMPLETED") {
+    bus.emit(EVENTS.MISSION_COMPLETED, {
+      userId,
+      missionId: dto.id,
+      title: dto.name,
+      rewardXp: dto.reward_amount,
+    });
+  } else if (next === "IN_PROGRESS" && (prev !== next || dto.progress > 0)) {
+    bus.emit(EVENTS.MISSION_PROGRESS, {
+      userId,
+      missionId: dto.id,
+      progress: dto.progress,
+      target: dto.target,
+      status: next,
+    });
+  }
+};
+
+/* ── Read ─────────────────────────────────────────────────────────────────── */
+
 export const listMissions = async (
   userId: string,
   email: string,
   periodKey: string = PERIOD
 ): Promise<MissionListResult> => {
-  const { missions, branding } = await loadCatalog(email);
-  const rows = await UserMissionRepository.listByUser(userId);
-  const byMission = new Map(
-    rows.filter((r) => r.period_key === periodKey).map((r) => [r.mission_id, r])
+  const [profile, res] = await Promise.all([
+    gamruUserProfileData(email),
+    gamru.integration.missions.list(email),
+  ]);
+  const branding =
+    profile.ok && profile.body
+      ? mapBranding(profile.body.widgets_config)
+      : DEFAULT_BRANDING;
+
+  if (res.ok && res.body) {
+    const missions = res.body.missions;
+    // Mirror GAMRU's truth into the local cache (best-effort).
+    for (const dto of missions) await syncMissionToCache(userId, dto, periodKey);
+    return { branding, missions };
+  }
+
+  // GAMRU unreachable → render from the local cache mirror.
+  const rows = (await UserMissionRepository.listByUser(userId)).filter(
+    (r) => r.period_key === periodKey
   );
-  return {
-    branding,
-    missions: missions.map((m) => mapMission(m, byMission.get(m.id))),
-  };
+  return { branding, missions: rows.map(dtoFromCacheRow) };
 };
 
 export const getMission = async (
@@ -265,299 +337,161 @@ export const getMission = async (
   missionId: string,
   periodKey: string = PERIOD
 ): Promise<MissionDTO> => {
-  const { missions } = await loadCatalog(email);
-  const found = missions.find((m) => m.id === missionId);
-  if (!found) throw new AppError("Mission not found", 404);
-  const um = await UserMissionRepository.find(userId, missionId, periodKey);
-  return mapMission(found, um ?? undefined);
+  const res = await gamru.integration.missions.get(missionId, email);
+  if (res.ok && res.body) {
+    await syncMissionToCache(userId, res.body, periodKey);
+    return res.body;
+  }
+  const row = await UserMissionRepository.find(userId, missionId, periodKey);
+  if (row) return dtoFromCacheRow(row);
+  throw new AppError("Mission not found", 404);
 };
 
-/**
- * Join a mission on a participation track. By default (the standalone Missions
- * tab) it enforces the BetFury rule: only one IN_PROGRESS mission per bucket
- * (Casino / Sport) — joining another in the same bucket cancels the current
- * one. Other tracks (e.g. bundles) can opt out with `exclusive: false` so the
- * player can run several at once. Re-joining a mission you already started on
- * the same track just resets it. Tracks never affect each other.
- */
+/* ── Mutations (delegated to GAMRU, mirrored to cache) ─────────────────────── */
+
+export interface ParticipationOpts {
+  /** When set, this mission is joined on the bundle's independent track. */
+  bundleId?: string | null;
+}
+
 export const joinMission = async (
   userId: string,
   email: string,
   missionId: string,
   opts: ParticipationOpts = {}
 ): Promise<MissionDTO> => {
-  const periodKey = opts.periodKey ?? PERIOD;
-  const exclusive = opts.exclusive ?? true;
-
-  const { missions } = await loadCatalog(email);
-  const found = missions.find((m) => m.id === missionId);
-  if (!found) throw new AppError("Mission not found", 404);
-
-  const dto = mapMission(found);
-  if (dto.target <= 0) {
-    throw new AppError("This mission is not configured correctly", 400);
+  const bundleId = opts.bundleId ?? null;
+  const res = await gamru.integration.missions.join(missionId, {
+    email,
+    external_id: userId,
+    bundleId,
+  });
+  if (!res.ok || !res.body) {
+    throw new AppError(res.error || "Failed to join mission", res.status ?? 502);
   }
+  const periodKey = bundleId ? bundlePeriodKey(bundleId) : PERIOD;
 
-  // Cancel any other running mission in the same bucket ON THIS TRACK only.
-  if (exclusive) {
+  // GAMRU enforces the one-per-bucket rule on the standalone track; mirror that
+  // by clearing other in-bucket rows from the local cache on this track.
+  if (!bundleId) {
     const others = await UserMissionRepository.listActiveInCategory(
       userId,
-      dto.bucket
+      res.body.bucket
     );
     for (const o of others) {
-      if (o.period_key === periodKey && o.mission_id !== missionId) {
-        await o.destroy();
-      }
+      if (o.period_key === PERIOD && o.mission_id !== missionId) await o.destroy();
     }
   }
-
-  const meta = objectiveSnapshot(dto);
-  const existing = await UserMissionRepository.find(userId, missionId, periodKey);
-  if (existing) {
-    existing.progress = 0;
-    existing.target = dto.target;
-    existing.status = "IN_PROGRESS";
-    existing.category = dto.bucket;
-    existing.meta = meta;
-    existing.completed_at = null;
-    existing.changed("meta", true);
-    await existing.save();
-  } else {
-    await UserMissionRepository.create({
-      user_id: userId,
-      mission_id: missionId,
-      progress: 0,
-      target: dto.target,
-      status: "IN_PROGRESS",
-      period_key: periodKey,
-      category: dto.bucket,
-      meta,
-    });
-  }
-
-  // Tell gamru the player joined, so the operator console's "Participated"
-  // count updates on join. Standalone track only — a mission joined inside a
-  // bundle is synced by the bundle engine against the BUNDLE id, so mission and
-  // bundle counts never cross-contaminate. Fire-and-forget.
-  if (periodKey === PERIOD) {
-    void gamru.participation
-      .record("missions", missionId, {
-        email,
-        external_id: userId,
-        status: "IN_PROGRESS",
-      })
-      .catch(() => {});
-  }
-
-  return { ...dto, status: "IN_PROGRESS", progress: 0 };
+  await syncMissionToCache(userId, res.body, periodKey);
+  return res.body;
 };
 
-/** Cancel a running mission on a track — the row is removed (back to AVAILABLE). */
 export const cancelMission = async (
   userId: string,
+  email: string,
   missionId: string,
-  periodKey: string = PERIOD
+  bundleId: string | null = null
 ): Promise<void> => {
-  const um = await UserMissionRepository.find(userId, missionId, periodKey);
-  if (!um) throw new AppError("Mission not started", 404);
-  if (um.status === "CLAIMED") {
-    throw new AppError("A claimed mission can't be cancelled", 409);
+  const res = await gamru.integration.missions.cancel(missionId, {
+    email,
+    bundleId,
+  });
+  if (!res.ok) {
+    throw new AppError(res.error || "Failed to cancel mission", res.status ?? 502);
   }
-  await um.destroy();
+  const periodKey = bundleId ? bundlePeriodKey(bundleId) : PERIOD;
+  const row = await UserMissionRepository.find(userId, missionId, periodKey);
+  if (row) await row.destroy();
 };
 
-/**
- * Claim a COMPLETED mission on a track. Grants the reward in gamru (so it lands
- * in the player's Special Bonuses) and marks the local participation CLAIMED.
- */
 export const claimMission = async (
   userId: string,
   email: string,
   missionId: string,
-  periodKey: string = PERIOD
+  bundleId: string | null = null
 ): Promise<{ reward_label: string }> => {
-  const um = await UserMissionRepository.find(userId, missionId, periodKey);
-  if (!um) throw new AppError("Mission not started", 404);
-  if (um.status === "CLAIMED") {
-    throw new AppError("Mission reward already claimed", 409);
-  }
-  if (um.status !== "COMPLETED") {
-    throw new AppError("Mission not completed yet", 409);
-  }
-
-  // gamru owns the reward ledger — resolve the player's gamru id by email.
-  const profile = await gamruUserProfileData(email);
-  const gamruPlayerId = profile.ok ? profile.body?.id : null;
-  if (!gamruPlayerId) {
-    throw new AppError("Could not reach the rewards service — try again", 503);
-  }
-
-  const res = await gamru.players.claimMissionReward(gamruPlayerId, missionId);
-  if (!res.ok) {
-    const body = res.body as { message?: string } | undefined;
-    const message = body?.message || res.error || "Failed to claim reward";
+  const res = await gamru.integration.missions.claim(missionId, {
+    email,
+    bundleId,
+  });
+  if (!res.ok || !res.body) {
+    const message = res.error || "Failed to claim reward";
     throw new AppError(message, res.status ?? 502);
   }
-
-  um.status = "CLAIMED";
-  await um.save();
-
-  // Reflect the claim on gamru's participation record (standalone track only).
-  if (periodKey === PERIOD) {
-    void gamru.participation
-      .record("missions", missionId, {
-        email,
-        external_id: userId,
-        status: "CLAIMED",
-      })
-      .catch(() => {});
-  }
-
-  const meta = (um.meta as Record<string, unknown>) ?? {};
-  return { reward_label: String(meta.reward_label ?? "Reward") };
+  const periodKey = bundleId ? bundlePeriodKey(bundleId) : PERIOD;
+  await syncMissionToCache(userId, res.body.mission, periodKey);
+  return { reward_label: res.body.reward_label };
 };
 
-/* ── Progress (driven by gameplay events) ─────────────────────────────────── */
+/* ── Progress (forwarded to GAMRU; results mirrored to cache) ─────────────── */
 
-interface AdvanceOpts {
-  /** Bet stake — gates the optional min-bet sub-condition. */
-  betSize: number;
-  /** Value added to amount-measured missions (turnover, win amount, …). */
-  amountValue: number;
-  /** Game played, for the optional game sub-condition. */
-  gameKey?: string | null;
-  /** The mission this play was launched for (from the mission/bundle card). */
-  missionId?: string | null;
-  /** The bundle, when the play was launched from a bundle card. */
-  bundleId?: string | null;
-}
-
-/**
- * Advance every running mission whose objective matches one of `kinds`.
- * Count-measured missions tick by 1; amount-measured missions add
- * `amountValue` (e.g. turnover for `wager`, win amount for `win`).
- */
-const advanceUserMissions = async (
-  userId: string,
-  kinds: string[],
-  opts: AdvanceOpts
-): Promise<void> => {
-  const { betSize, amountValue, gameKey, missionId, bundleId } = opts;
-
-  // Which participation rows may this play advance? A mission can be IN_PROGRESS
-  // on more than one track — the standalone Missions tab ("GAMRU") and one or
-  // more bundle tracks. So we DON'T advance every copy (that moves them in
-  // lockstep). When the game was launched from a specific mission/bundle card,
-  // the activity carries that context and we advance ONLY that one track:
-  //   - bundle present → that bundle's track for the mission,
-  //   - mission only   → the standalone "GAMRU" track for the mission.
-  // With no context (a generic game play), fall back to the standalone track
-  // only — never bundle tracks.
-  let rows: UserMission[];
-  if (missionId) {
-    const periodKey = bundleId ? bundlePeriodKey(bundleId) : PERIOD;
-    const um = await UserMissionRepository.find(userId, missionId, periodKey);
-    rows = um && um.status === "IN_PROGRESS" ? [um] : [];
-  } else {
-    rows = (await UserMissionRepository.listInProgress(userId)).filter(
-      (r) => r.period_key === PERIOD
-    );
-  }
-
-  for (const um of rows) {
-    const meta = (um.meta as Record<string, unknown>) ?? {};
-    const ot = String(meta.objective_type ?? "");
-    if (!kinds.includes(ot)) continue;
-
-    // Mission restricted to specific games → only count plays of those games.
-    const games = Array.isArray(meta.games) ? (meta.games as string[]) : [];
-    if (games.length > 0 && (!gameKey || !games.includes(gameKey))) continue;
-
-    const minBet = Number(meta.min_bet ?? 0) || 0;
-    if (minBet > 0 && betSize < minBet) continue;
-
-    const measure = String(meta.measure ?? "count");
-    const delta =
-      measure === "amount" ? Math.max(0, Math.round(amountValue)) : 1;
-    if (delta <= 0) continue;
-
-    um.progress = Math.min(Number(um.progress ?? 0) + delta, um.target);
-    if (um.progress >= um.target) {
-      um.status = "COMPLETED";
-      um.completed_at = new Date();
-      await um.save();
-      bus.emit(EVENTS.MISSION_COMPLETED, {
-        userId,
-        missionId: um.mission_id,
-        title: String(meta.name ?? "Mission"),
-        rewardXp: Number(meta.reward_amount ?? 0),
-      });
-    } else {
-      await um.save();
-      bus.emit(EVENTS.MISSION_PROGRESS, {
-        userId,
-        missionId: um.mission_id,
-        progress: um.progress,
-        target: um.target,
-        status: um.status,
-      });
-    }
-  }
-};
-
-/** A single play's signal, derived from the activity event. */
 export interface PlaySignal {
-  /** Bet stake / turnover for this play. */
   stake: number;
-  /** Whether the play was a win. */
   win: boolean;
-  /** Amount won on this play (0 on a loss). */
   winAmount: number;
-  /** Game route key played, if known. */
   gameKey?: string | null;
 }
 
-/**
- * A gameplay/bet event. Advances:
- *  - `wager` / `bet_count` missions on every play (turnover = the stake),
- *  - `win` missions only on a win (amount = the win amount).
- */
 export const advanceForActivity = async (
   userId: string,
   signal: PlaySignal,
   context: { missionId?: string | null; bundleId?: string | null } = {}
 ): Promise<void> => {
+  const email = await resolveEmail(userId);
+  if (!email) return;
   const { missionId = null, bundleId = null } = context;
-  await advanceUserMissions(userId, ["wager", "bet_count"], {
-    betSize: signal.stake,
-    amountValue: signal.stake,
+
+  const res = await gamru.integration.activity({
+    email,
+    external_id: userId,
+    kind: "play",
+    stake: signal.stake,
+    win: signal.win,
+    winAmount: signal.winAmount,
     gameKey: signal.gameKey,
     missionId,
     bundleId,
   });
-  if (signal.win) {
-    await advanceUserMissions(userId, ["win"], {
-      betSize: signal.stake,
-      amountValue: signal.winAmount,
-      gameKey: signal.gameKey,
-      missionId,
-      bundleId,
-    });
+
+  // The activity response carries the player's standalone mission snapshot.
+  if (res.ok && res.body) {
+    for (const dto of res.body.missions) {
+      const { prev, next } = await syncMissionToCache(userId, dto, PERIOD);
+      emitTransition(userId, dto, prev, next);
+    }
+  }
+
+  // A bundle-scoped play advanced the bundle track too — mirror that one row.
+  if (missionId && bundleId) {
+    const pr = await gamru.integration.missions.progress(missionId, email, bundleId);
+    if (pr.ok && pr.body) {
+      const periodKey = bundlePeriodKey(bundleId);
+      const { prev, next } = await syncMissionToCache(userId, pr.body, periodKey);
+      emitTransition(userId, pr.body, prev, next);
+    }
   }
 };
 
-/** A login/streak tick — advances login missions. */
 export const advanceForLogin = async (userId: string): Promise<void> => {
-  await advanceUserMissions(userId, ["login"], {
-    betSize: 0,
-    amountValue: 1,
+  const email = await resolveEmail(userId);
+  if (!email) return;
+  const res = await gamru.integration.activity({
+    email,
+    external_id: userId,
+    kind: "login",
   });
+  if (res.ok && res.body) {
+    for (const dto of res.body.missions) {
+      const { prev, next } = await syncMissionToCache(userId, dto, PERIOD);
+      emitTransition(userId, dto, prev, next);
+    }
+  }
 };
 
 /**
- * Missions are now opt-in (the player JOINs from the Missions page), so there
- * is nothing to seed on registration. Kept as a no-op so the registration
- * flow's import stays stable.
+ * Missions are opt-in (the player JOINs from the Missions page), so there is
+ * nothing to seed on registration. Kept as a no-op so the registration flow's
+ * import stays stable.
  */
 export const seedInitialUserMissions = async (
   _userId: string

@@ -1,43 +1,29 @@
-import { Op } from "sequelize";
+/**
+ * Gamru-backed tournament service — THIN CONSUMER.
+ *
+ * GAMRU is the single source of truth for tournaments: it authors the
+ * definitions AND now owns all participation, scoring, ranking and prize
+ * settlement via the `/api/integration/tournaments/*` API. This module no
+ * longer computes leaderboards or settles prizes (that moved to GAMRU, which
+ * grants the prize into the player's reward ledger on claim). It forwards
+ * scores, reads GAMRU's standings, and mirrors them into the local
+ * `user_tournaments` table — a read-through CACHE / audit + history mirror.
+ */
 import { AppError } from "../../../utils/AppError.ts";
-import { logger } from "../../../utils/logger.ts";
-import sequelize from "../../../config/db.ts";
 import gamru, {
   gamruUserProfileData,
-  type GamruTournament,
+  type GamruIntTournament,
   type GamruWidgetsConfig,
 } from "../../../utils/gamruService.ts";
-import UserTournament from "../model/user-tournament.model.ts";
 import UserTournamentRepository from "../model/user-tournament.repository.ts";
 import UserRepository from "../../user/model/user.repository.ts";
 import WalletRepository from "../../wallet/model/wallet.repository.ts";
+import { pushNotification } from "../../notification/service/notification.service.ts";
 
-/** Lifecycle state derived from the tournament's start / end dates. */
 export type TournamentState = "SCHEDULED" | "IN_PROGRESS" | "ENDED";
 
-export interface TournamentDTO {
-  id: string;
-  name: string;
-  description: string | null;
-  industry: string; // "Casino" | "Sports" | …
-  tournament_type: string | null;
-  /** Game route keys the player can launch for this tournament. */
-  games: string[];
-  period: string | null;
-  large_image: string | null;
-  small_image: string | null;
-  min_bet: number | null;
-  max_bets: number | null;
-  buy_in: number | null;
-  start_date: string | null;
-  end_date: string | null;
-  leaderboard_size: number | null;
-  prize_pool: number | null;
-  eligibility_type: string | null;
-  segment: string | null;
-  tags: string[];
-  state: TournamentState;
-}
+/** Tournament shape returned to the games frontend === GAMRU's integration DTO. */
+export type TournamentDTO = GamruIntTournament;
 
 export interface TournamentBranding {
   banner_desktop: string | null;
@@ -52,8 +38,9 @@ export interface TournamentLeaderboardEntry {
   name: string;
   score: number;
   is_me: boolean;
-  /** Prize-pool share credited to this player once the tournament ended (top-3). */
   prize: number;
+  /** Whether this player already claimed their prize (from GAMRU). */
+  claimed: boolean;
 }
 
 const DEFAULT_BRANDING: TournamentBranding = {
@@ -63,94 +50,17 @@ const DEFAULT_BRANDING: TournamentBranding = {
   tag_color_sport: "#417505",
 };
 
-const toNum = (v: unknown): number | null => {
-  if (v === null || v === undefined || v === "") return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-};
-
 const toStr = (v: unknown): string | null => {
   if (v === null || v === undefined) return null;
   const s = String(v).trim();
   return s === "" ? null : s;
 };
 
-/** Normalize the tournament's game list, tolerating the legacy single field. */
-const toGames = (d: GamruTournament["data"]): string[] => {
-  const list = Array.isArray(d?.games) ? d!.games : [];
-  const cleaned = list.map((g) => String(g).trim()).filter(Boolean);
-  if (cleaned.length > 0) return Array.from(new Set(cleaned));
-  const single = toStr(d?.game);
-  return single ? [single] : [];
-};
+const round2 = (n: number): number => Math.round(n * 100) / 100;
 
-/**
- * Parse a tournament date, but only trust it if it actually looks like a real
- * date. The wizard fields are free-text, so operators may type junk like "5"
- * or "10" — `Date.parse("10")` yields the year 2001, which would wrongly mark
- * a live tournament as ENDED. We reject bare numbers, very short strings, and
- * implausible years, returning null ("unknown") for anything untrustworthy.
- */
-const parseTrustworthyDate = (v: string | null): number | null => {
-  if (!v) return null;
-  const s = v.trim();
-  if (s.length < 6) return null; // too short to be a real date
-  if (/^\d+$/.test(s)) return null; // a bare number is not a date
-  const ts = Date.parse(s);
-  if (Number.isNaN(ts)) return null;
-  const year = new Date(ts).getFullYear();
-  if (year < 2000 || year > 2100) return null; // implausible
-  return ts;
-};
-
-/**
- * Derive a lifecycle state from the (free-text) start / end dates. When the
- * dates are missing or untrustworthy, an ACTIVE tournament defaults to
- * IN_PROGRESS so players can still register and play — we only mark ENDED when
- * there is a clearly-valid end date in the past.
- */
-const deriveState = (
-  startDate: string | null,
-  endDate: string | null
-): TournamentState => {
-  const now = Date.now();
-  const start = parseTrustworthyDate(startDate);
-  const end = parseTrustworthyDate(endDate);
-
-  if (end !== null && now > end) return "ENDED";
-  if (start !== null && now < start) return "SCHEDULED";
-  return "IN_PROGRESS";
-};
-
-const mapTournament = (t: GamruTournament): TournamentDTO => {
-  const d = t.data ?? {};
-  const start_date = toStr(d.start_date);
-  const end_date = toStr(d.end_date);
-  return {
-    id: t.id,
-    name: t.name,
-    description: t.description ?? null,
-    industry: toStr(d.industry) ?? "Casino",
-    tournament_type: toStr(d.tournament_type),
-    games: toGames(d),
-    period: toStr(d.period),
-    large_image: toStr(d.large_image),
-    small_image: toStr(d.small_image),
-    min_bet: toNum(d.min_bet),
-    max_bets: toNum(d.max_bets),
-    buy_in: toNum(d.buy_in),
-    start_date,
-    end_date,
-    leaderboard_size: toNum(d.leaderboard_size),
-    prize_pool: toNum(d.prize_pool),
-    eligibility_type: toStr(d.eligibility_type),
-    segment: toStr(d.segment),
-    tags: Array.isArray(t.tags) ? t.tags : [],
-    state: deriveState(start_date, end_date),
-  };
-};
-
-const mapBranding = (cfg: GamruWidgetsConfig | null | undefined): TournamentBranding => ({
+const mapBranding = (
+  cfg: GamruWidgetsConfig | null | undefined
+): TournamentBranding => ({
   banner_desktop: toStr(cfg?.tournaments_banner_desktop),
   banner_mobile: toStr(cfg?.tournaments_banner_mobile),
   tag_color_casino:
@@ -159,21 +69,85 @@ const mapBranding = (cfg: GamruWidgetsConfig | null | undefined): TournamentBran
     toStr(cfg?.tournaments_tag_color_sport) ?? DEFAULT_BRANDING.tag_color_sport,
 });
 
-/**
- * Fetch the live tournament catalog from Gamru for this player and merge in
- * their local participation. Never throws on a Gamru outage — returns an
- * empty catalog so the page still renders.
- */
-const loadCatalog = async (
-  email: string
-): Promise<{ tournaments: GamruTournament[]; branding: TournamentBranding }> => {
+/** Page branding only — pulled from the player's gamru profile (widgets). */
+const loadBranding = async (email: string): Promise<TournamentBranding> => {
   const res = await gamruUserProfileData(email);
-  if (!res.ok || !res.body) {
-    return { tournaments: [], branding: DEFAULT_BRANDING };
-  }
-  const tournaments = res.body.gamification?.tournaments ?? [];
-  return { tournaments, branding: mapBranding(res.body.widgets_config) };
+  return res.ok && res.body ? mapBranding(res.body.widgets_config) : DEFAULT_BRANDING;
 };
+
+/* ── Cache mirror ─────────────────────────────────────────────────────────── */
+
+interface CachePatch {
+  score?: number;
+  plays?: number;
+  games_played?: Record<string, number>;
+  rank?: number | null;
+  prize_amount?: number;
+  prize_awarded?: boolean;
+  claimed_at?: Date | null;
+  status?: string | null;
+  registered?: boolean;
+  tournament_name?: string | null;
+  tournament_industry?: string | null;
+  tournament_image?: string | null;
+}
+
+const syncTournamentToCache = async (
+  userId: string,
+  tournamentId: string,
+  patch: CachePatch
+): Promise<void> => {
+  const existing = await UserTournamentRepository.find(userId, tournamentId);
+  const data = { ...patch, last_synced_at: new Date() };
+  if (existing) {
+    existing.set(data);
+    if (patch.games_played) existing.changed("games_played", true);
+    await existing.save();
+  } else {
+    await UserTournamentRepository.create({
+      user_id: userId,
+      tournament_id: tournamentId,
+      ...data,
+    });
+  }
+};
+
+/**
+ * Notify the player ONCE that a tournament ended and their prize is claimable.
+ * Gated by the local cache's `prize_awarded` flag, so it fires the first time we
+ * observe a won, unclaimed prize and never again.
+ */
+const notifyPrizeAvailableOnce = async (
+  userId: string,
+  t: {
+    tournament_id: string;
+    name: string;
+    prize: number;
+    claimed: boolean;
+    rank?: number | null;
+  }
+): Promise<void> => {
+  if (!(t.prize > 0) || t.claimed) return;
+  const cached = await UserTournamentRepository.find(userId, t.tournament_id);
+  if (cached?.prize_awarded) return; // already known / already notified
+
+  await pushNotification(
+    userId,
+    "REWARD_UNLOCKED",
+    `Tournament ended: ${t.name} 🏆`,
+    `You won a $${t.prize} prize pool — claim it now from the tournament or your rewards!`,
+    { tournamentId: t.tournament_id, kind: "tournament_prize" }
+  );
+  await syncTournamentToCache(userId, t.tournament_id, {
+    prize_awarded: true,
+    prize_amount: t.prize,
+    rank: t.rank ?? null,
+    status: "WON",
+    tournament_name: t.name,
+  });
+};
+
+/* ── Read ─────────────────────────────────────────────────────────────────── */
 
 export interface TournamentListResult {
   branding: TournamentBranding;
@@ -184,16 +158,12 @@ export const listTournaments = async (
   _userId: string,
   email: string
 ): Promise<TournamentListResult> => {
-  const { tournaments, branding } = await loadCatalog(email);
-  const mapped = tournaments.map(mapTournament);
-  // Settle any tournament that has ended (idempotent) so prizes land in
-  // wallets as soon as a player opens the tournaments page after it closes.
-  await Promise.all(
-    mapped
-      .filter((t) => t.state === "ENDED")
-      .map((t) => settleTournamentPrizes(t.id, t.prize_pool))
-  );
-  return { branding, tournaments: mapped };
+  const [branding, res] = await Promise.all([
+    loadBranding(email),
+    gamru.integration.tournaments.list(email),
+  ]);
+  const tournaments = res.ok && res.body ? res.body.tournaments : [];
+  return { branding, tournaments };
 };
 
 export interface TournamentDetailResult {
@@ -207,220 +177,50 @@ export const getTournament = async (
   email: string,
   tournamentId: string
 ): Promise<TournamentDetailResult> => {
-  const { tournaments, branding } = await loadCatalog(email);
-  const found = tournaments.find((t) => t.id === tournamentId);
-  if (!found) throw new AppError("Tournament not found", 404);
+  const [branding, res] = await Promise.all([
+    loadBranding(email),
+    gamru.integration.tournaments.get(tournamentId, email),
+  ]);
+  if (!res.ok || !res.body) throw new AppError("Tournament not found", 404);
 
-  const tournament = mapTournament(found);
-  // Tournament is over → settle the prize pool to the top-3 (once) before we
-  // render the (now final) standings.
-  if (tournament.state === "ENDED") {
-    await settleTournamentPrizes(tournamentId, tournament.prize_pool);
-  }
-  const leaderboard = await buildLeaderboard(
-    tournamentId,
-    userId,
-    tournament.leaderboard_size
-  );
-  return { branding, tournament, leaderboard };
-};
-
-const buildLeaderboard = async (
-  tournamentId: string,
-  meId: string,
-  size: number | null
-): Promise<TournamentLeaderboardEntry[]> => {
-  // Everyone who has scored in this tournament, best first.
-  const rows = (await UserTournamentRepository.listByTournament(tournamentId))
-    .slice(0, size && size > 0 ? size : undefined);
-  if (rows.length === 0) return [];
-
-  const users = await UserRepository.findWhere({
-    id: { [Op.in]: rows.map((r) => r.user_id) },
-  });
-  const nameById = new Map(
-    users.map((u) => [
-      u.id,
-      (u.username || `${u.first_name} ${u.last_name}`).trim() || "Player",
-    ])
-  );
-
-  return rows.map((r, i) => ({
-    rank: i + 1,
-    user_id: r.user_id,
-    name: nameById.get(r.user_id) ?? "Player",
-    score: r.score,
-    is_me: r.user_id === meId,
-    prize: round2(Number(r.prize_amount ?? 0)),
+  const { tournament, leaderboard } = res.body;
+  const mappedBoard: TournamentLeaderboardEntry[] = leaderboard.map((e) => ({
+    rank: e.rank,
+    user_id: e.email,
+    name: e.name,
+    score: e.score,
+    is_me: e.is_me,
+    prize: round2(e.prize),
+    claimed: Boolean(e.claimed),
   }));
-};
 
-/** Prize-pool split for the top-3 finishers (1st / 2nd / 3rd). */
-const PRIZE_SPLIT = [0.5, 0.3, 0.2];
-
-const round2 = (n: number): number => Math.round(n * 100) / 100;
-
-/**
- * Settle a finished tournament: credit the top-3 players a share of the prize
- * pool (50/30/20) to their wallet balance, exactly once.
- *
- * Idempotent — guarded by the `prize_awarded` flag inside a transaction, so
- * concurrent requests (or repeated views of an ended tournament) never double
- * pay. Runs lazily whenever an ENDED tournament is loaded; a Gamru/DB hiccup
- * is logged and swallowed so it never breaks the page.
- */
-export const settleTournamentPrizes = async (
-  tournamentId: string,
-  prizePool: number | null
-): Promise<void> => {
-  const pool = Number(prizePool);
-  if (!Number.isFinite(pool) || pool <= 0) return;
-
-  try {
-    await sequelize.transaction(async (t) => {
-      // Already settled? (any awarded row for this tournament → stop).
-      const settled = await UserTournament.count({
-        where: { tournament_id: tournamentId, prize_awarded: true },
-        transaction: t,
-      });
-      if (settled > 0) return;
-
-      // Top-3 scorers, locked for the duration of the payout.
-      const winners = await UserTournament.findAll({
-        where: { tournament_id: tournamentId, score: { [Op.gt]: 0 } },
-        order: [["score", "DESC"]],
-        limit: PRIZE_SPLIT.length,
-        transaction: t,
-        lock: t.LOCK.UPDATE,
-      });
-      if (winners.length === 0) return;
-
-      for (let i = 0; i < winners.length; i += 1) {
-        const w = winners[i];
-        const amount = round2(pool * PRIZE_SPLIT[i]);
-
-        const wallet = await WalletRepository.findOrCreateByUserId(w.user_id);
-        wallet.balance = round2(Number(wallet.balance ?? 0) + amount);
-        await wallet.save({ transaction: t });
-
-        w.prize_awarded = true;
-        w.prize_amount = amount;
-        await w.save({ transaction: t });
-      }
-
-      logger.info("Tournament prizes distributed", {
-        tournamentId,
-        pool,
-        winners: winners.length,
-      });
-    });
-  } catch (err) {
-    logger.warn("Tournament prize settlement failed", { tournamentId, err });
-  }
-};
-
-export interface RecordScoreResult {
-  tournament_id: string;
-  score: number;
-  applied: number;
-}
-
-/**
- * Add tournament points earned from a play. Increments the player's running
- * score (drives the games-side leaderboard — a player appears on the board the
- * moment they score, no registration step) and mirrors the delta to Gamru so
- * the backoffice sees the same standings.
- *
- * If `game` is provided it must match the tournament's configured game,
- * otherwise the points are ignored (a stray play of a different game must not
- * pollute the leaderboard). A Gamru outage never fails the call.
- */
-export const recordScore = async (
-  userId: string,
-  email: string,
-  tournamentId: string,
-  points: number,
-  game?: string | null
-): Promise<RecordScoreResult> => {
-  const delta = Math.max(0, Math.round(Number(points) || 0));
-
-  const { tournaments } = await loadCatalog(email);
-  const found = tournaments.find((t) => t.id === tournamentId);
-  if (!found) throw new AppError("Tournament not found", 404);
-
-  const tournamentGames = toGames(found.data);
-  if (game && tournamentGames.length > 0 && !tournamentGames.includes(game)) {
-    // Played a game that isn't part of this tournament — ignore.
-    const existing = await UserTournamentRepository.find(userId, tournamentId);
-    return {
+  // Mirror the player's own standing into the cache for history / fallback.
+  const me = leaderboard.find((e) => e.is_me);
+  if (me) {
+    // Notify (once) before the mirror flips prize_awarded.
+    await notifyPrizeAvailableOnce(userId, {
       tournament_id: tournamentId,
-      score: existing?.score ?? 0,
-      applied: 0,
-    };
-  }
-
-  const snapshot = {
-    tournament_name: found.name,
-    tournament_industry: toStr(found.data?.industry),
-    tournament_image: toStr(found.data?.large_image),
-    last_played_at: new Date(),
-  };
-
-  let row = await UserTournamentRepository.find(userId, tournamentId);
-
-  // Track which game was played (only when a known game key is supplied).
-  const gamesPlayed: Record<string, number> = {
-    ...((row?.games_played as Record<string, number> | undefined) ?? {}),
-  };
-  if (game) gamesPlayed[game] = (gamesPlayed[game] ?? 0) + 1;
-
-  if (!row) {
-    row = await UserTournamentRepository.create({
-      user_id: userId,
-      tournament_id: tournamentId,
-      score: delta,
-      plays: 1,
-      games_played: gamesPlayed,
-      ...snapshot,
+      name: tournament.name,
+      prize: round2(me.prize),
+      claimed: Boolean(me.claimed),
+      rank: me.rank,
     });
-  } else {
-    row.score = Number(row.score ?? 0) + delta;
-    row.plays = Number(row.plays ?? 0) + 1;
-    row.games_played = gamesPlayed;
-    row.tournament_name = snapshot.tournament_name;
-    row.tournament_industry = snapshot.tournament_industry;
-    row.tournament_image = snapshot.tournament_image;
-    row.last_played_at = snapshot.last_played_at;
-    // JSONB fields need an explicit changed() flag when mutated by reference.
-    row.changed("games_played", true);
-    await row.save();
+    await syncTournamentToCache(userId, tournamentId, {
+      score: me.score,
+      rank: me.rank,
+      prize_amount: round2(me.prize),
+      prize_awarded: me.prize > 0,
+      registered: true,
+      tournament_name: tournament.name,
+      tournament_industry: tournament.industry,
+      tournament_image: tournament.large_image,
+    });
   }
 
-  // Mirror to Gamru (fire-and-forget; safe on outage).
-  if (delta > 0) {
-    try {
-      const user = await UserRepository.findByPk(userId);
-      const name = user
-        ? (user.username || `${user.first_name} ${user.last_name}`).trim()
-        : null;
-      const res = await gamru.tournamentLeaderboard.submitScore(tournamentId, {
-        email,
-        name,
-        points: delta,
-      });
-      if (!res.ok) {
-        logger.warn("Gamru tournament score push failed", {
-          tournamentId,
-          status: res.status,
-        });
-      }
-    } catch (err) {
-      logger.warn("Gamru tournament score push errored", { tournamentId, err });
-    }
-  }
-
-  return { tournament_id: tournamentId, score: row.score, applied: delta };
+  return { branding, tournament, leaderboard: mappedBoard };
 };
+
+/* ── History ──────────────────────────────────────────────────────────────── */
 
 export interface TournamentHistoryGame {
   game: string;
@@ -430,27 +230,20 @@ export interface TournamentHistoryGame {
 export interface TournamentHistoryEntry {
   tournament_id: string;
   name: string;
-  /** The player who played this tournament. */
   player_name: string;
   player_email: string | null;
   industry: string;
   image: string | null;
-  /** Games the player has played in this tournament. */
   plays: number;
-  /** Which games the player played, with per-game counts (most played first). */
   games_played: TournamentHistoryGame[];
-  /** Total points / XP the player earned in this tournament. */
   xp: number;
-  /** The player's current rank on this tournament's leaderboard. */
   rank: number;
+  /** Prize won (GAMRU computed) and whether it has been claimed. */
+  prize: number;
+  claimed: boolean;
   last_played_at: string | null;
 }
 
-/**
- * The player's tournament history: every tournament they've actually played,
- * with games played, points/XP earned, and their current rank. Reads from the
- * local snapshot so it still renders after a tournament leaves the catalog.
- */
 export const getTournamentHistory = async (
   userId: string
 ): Promise<TournamentHistoryEntry[]> => {
@@ -460,29 +253,44 @@ export const getTournamentHistory = async (
     : "Player";
   const playerEmail = user?.email ?? null;
 
+  // GAMRU owns the history. Fall back to the local cache mirror on outage.
+  if (playerEmail) {
+    const res = await gamru.integration.users.tournaments(userId, playerEmail);
+    if (res.ok && res.body) {
+      // Notify (once each) for any ended tournament with a claimable prize.
+      for (const t of res.body.tournaments) {
+        await notifyPrizeAvailableOnce(userId, {
+          tournament_id: t.tournament_id,
+          name: t.name,
+          prize: round2(t.prize),
+          claimed: t.claimed,
+          rank: t.rank,
+        });
+      }
+      return res.body.tournaments.map((t) => ({
+        tournament_id: t.tournament_id,
+        name: t.name,
+        player_name: playerName,
+        player_email: playerEmail,
+        industry: t.industry,
+        image: t.image,
+        plays: t.plays,
+        games_played: t.games_played,
+        xp: t.xp,
+        rank: t.rank,
+        prize: round2(t.prize),
+        claimed: t.claimed,
+        last_played_at: t.last_played_at,
+      }));
+    }
+  }
+
   const rows = (await UserTournamentRepository.listByUser(userId)).filter(
     (r) => Number(r.plays ?? 0) > 0 || Number(r.score ?? 0) > 0
   );
-
-  rows.sort((a, b) => {
-    const ta = a.last_played_at ? new Date(a.last_played_at).getTime() : 0;
-    const tb = b.last_played_at ? new Date(b.last_played_at).getTime() : 0;
-    return tb - ta;
-  });
-
-  const out: TournamentHistoryEntry[] = [];
-  for (const r of rows) {
-    const better = await UserTournamentRepository.count({
-      tournament_id: r.tournament_id,
-      score: { [Op.gt]: Number(r.score ?? 0) },
-    });
+  return rows.map((r) => {
     const gp = (r.games_played as Record<string, number> | undefined) ?? {};
-    const games_played = Object.entries(gp)
-      .map(([game, plays]) => ({ game, plays: Number(plays) || 0 }))
-      .filter((g) => g.plays > 0)
-      .sort((a, b) => b.plays - a.plays);
-
-    out.push({
+    return {
       tournament_id: r.tournament_id,
       name: r.tournament_name || "Tournament",
       player_name: playerName,
@@ -490,13 +298,104 @@ export const getTournamentHistory = async (
       industry: r.tournament_industry || "Casino",
       image: r.tournament_image ?? null,
       plays: Number(r.plays ?? 0),
-      games_played,
+      games_played: Object.entries(gp)
+        .map(([game, plays]) => ({ game, plays: Number(plays) || 0 }))
+        .filter((g) => g.plays > 0)
+        .sort((a, b) => b.plays - a.plays),
       xp: Number(r.score ?? 0),
-      rank: better + 1,
+      rank: r.rank ?? 0,
+      prize: round2(Number(r.prize_amount ?? 0)),
+      claimed: Boolean(r.claimed_at),
       last_played_at: r.last_played_at
         ? new Date(r.last_played_at).toISOString()
         : null,
-    });
+    };
+  });
+};
+
+/* ── Mutations (delegated to GAMRU, mirrored to cache) ─────────────────────── */
+
+export interface RecordScoreResult {
+  tournament_id: string;
+  score: number;
+  applied: number;
+}
+
+export const recordScore = async (
+  userId: string,
+  email: string,
+  tournamentId: string,
+  points: number,
+  game?: string | null
+): Promise<RecordScoreResult> => {
+  const res = await gamru.integration.tournaments.score(tournamentId, {
+    email,
+    points: Math.max(0, Math.round(Number(points) || 0)),
+    game,
+    external_id: userId,
+  });
+  if (!res.ok || !res.body) {
+    // Don't fail gameplay on a GAMRU hiccup — report no points applied.
+    const existing = await UserTournamentRepository.find(userId, tournamentId);
+    return {
+      tournament_id: tournamentId,
+      score: Number(existing?.score ?? 0),
+      applied: 0,
+    };
   }
-  return out;
+
+  // Mirror the new running score into the cache.
+  const existing = await UserTournamentRepository.find(userId, tournamentId);
+  const gamesPlayed: Record<string, number> = {
+    ...((existing?.games_played as Record<string, number> | undefined) ?? {}),
+  };
+  if (game && res.body.applied > 0) {
+    gamesPlayed[game] = (gamesPlayed[game] ?? 0) + 1;
+  }
+  await syncTournamentToCache(userId, tournamentId, {
+    score: res.body.score,
+    plays: Number(existing?.plays ?? 0) + (res.body.applied > 0 ? 1 : 0),
+    games_played: gamesPlayed,
+    registered: true,
+    last_played_at: new Date(),
+  } as CachePatch & { last_played_at: Date });
+
+  return res.body;
+};
+
+/**
+ * Claim a settled tournament prize. GAMRU grants it into its reward ledger
+ * (idempotent — a second claim is rejected there with 409, so this throws
+ * before crediting), and we credit the prize to the player's LOCAL games wallet
+ * here. GAMRU's ledger and the games wallet are separate stores, so this is the
+ * one place the cash actually lands in the player's wallet.
+ */
+export const claimTournament = async (
+  userId: string,
+  email: string,
+  tournamentId: string
+): Promise<{ prize: number; balance?: number }> => {
+  const res = await gamru.integration.tournaments.claim(tournamentId, { email });
+  if (!res.ok || !res.body) {
+    throw new AppError(res.error || "Failed to claim prize", res.status ?? 502);
+  }
+  const prize = round2(res.body.prize);
+
+  // Credit the local wallet with the prize (GAMRU already accepted the claim,
+  // so this runs at most once per tournament for this player).
+  let balance: number | undefined;
+  if (prize > 0) {
+    const wallet = await WalletRepository.findOrCreateByUserId(userId);
+    wallet.balance = round2(Number(wallet.balance ?? 0) + prize);
+    await wallet.save();
+    balance = wallet.balance;
+  }
+
+  await syncTournamentToCache(userId, tournamentId, {
+    claimed_at: new Date(),
+    status: "CLAIMED",
+    prize_amount: prize,
+    prize_awarded: true,
+  });
+  return { prize, balance };
 };

@@ -4,6 +4,7 @@ import {
   getHistory,
   getOne,
   submitScore,
+  claim,
 } from "../modules/tournament/controller/tournament.controller.ts";
 import { auth } from "../middlewares/auth.middleware.ts";
 
@@ -14,6 +15,7 @@ router.get("/", auth, getMyTournaments);
 router.get("/history", auth, getHistory);
 router.get("/:id", auth, getOne);
 router.post("/:id/score", auth, submitScore);
+router.post("/:id/claim", auth, claim);
 
 // Swagger payload (body isn't Joi-validated — docs-only).
 (router as Router & { docs?: Record<string, unknown> }).docs = {

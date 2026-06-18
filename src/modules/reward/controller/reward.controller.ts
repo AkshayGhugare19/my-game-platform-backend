@@ -6,8 +6,16 @@ import RewardRepository from "../model/reward.repository.ts";
 import UserRewardRepository from "../model/user-reward.repository.ts";
 import { claimReward as claimLocalReward } from "../service/reward.engine.ts";
 import UserRepository from "../../user/model/user.repository.ts";
+import WalletRepository from "../../wallet/model/wallet.repository.ts";
 import { gamru, gamruUserProfileData } from "../../../utils/gamruService.ts";
 import { readPageParams, paginateArray } from "../../../utils/pagination.ts";
+
+/** Trailing number in a reward label, e.g. "Weekend Race prize — 500" → 500. */
+const parseTrailingAmount = (label?: string | null): number => {
+  if (!label) return 0;
+  const m = String(label).match(/(-?\d+(?:\.\d+)?)\s*$/);
+  return m ? Number(m[1]) : 0;
+};
 
 interface GamruRewardRow {
   id?: string;
@@ -92,7 +100,28 @@ export const claim = async (
         return;
       }
       const body = result.body as { data?: unknown; message?: string } | undefined;
-      successResponse(res, 200, body?.message || "Reward claimed", body?.data ?? body);
+      // A tournament-prize reward credits the local games wallet (GAMRU's ledger
+      // and the games wallet are separate stores). GAMRU only lets the claim
+      // succeed on the IN_PROGRESS→GRANTED transition, so this runs at most once.
+      const data = body?.data as
+        | { reward?: GamruRewardRow; player?: unknown }
+        | undefined;
+      const claimedReward = data?.reward;
+      let balance: number | undefined;
+      if (claimedReward?.gamification_source === "tournaments") {
+        const amount = parseTrailingAmount(claimedReward.reward);
+        if (amount > 0) {
+          const wallet = await WalletRepository.findOrCreateByUserId(req.user!.id);
+          wallet.balance =
+            Math.round((Number(wallet.balance ?? 0) + amount) * 100) / 100;
+          await wallet.save();
+          balance = wallet.balance;
+        }
+      }
+      successResponse(res, 200, body?.message || "Reward claimed", {
+        ...(data ?? {}),
+        ...(balance !== undefined ? { balance } : {}),
+      });
       return;
     }
 

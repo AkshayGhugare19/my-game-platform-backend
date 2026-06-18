@@ -40,6 +40,10 @@ export class UserMission extends Model<
    */
   declare meta: CreationOptional<Record<string, unknown>>;
   declare completed_at: CreationOptional<Date | null>;
+  /** Mirrors GAMRU's claim timestamp (this row is a cache of GAMRU). */
+  declare claimed_at: CreationOptional<Date | null>;
+  /** When this cache row was last mirrored from a GAMRU response. */
+  declare last_synced_at: CreationOptional<Date | null>;
   declare readonly created_at: CreationOptional<Date>;
   declare readonly updated_at: CreationOptional<Date>;
 }
@@ -66,6 +70,8 @@ UserMission.init(
     category: { type: DataTypes.STRING(30), allowNull: true },
     meta: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
     completed_at: { type: DataTypes.DATE, allowNull: true },
+    claimed_at: { type: DataTypes.DATE, allowNull: true },
+    last_synced_at: { type: DataTypes.DATE, allowNull: true },
     created_at: DataTypes.DATE,
     updated_at: DataTypes.DATE,
   },
