@@ -361,11 +361,19 @@ export const joinMission = async (
   opts: ParticipationOpts = {}
 ): Promise<MissionDTO> => {
   const bundleId = opts.bundleId ?? null;
-  const res = await gamru.integration.missions.join(missionId, {
-    email,
-    external_id: userId,
-    bundleId,
-  });
+  // A bundle-track join goes through the dedicated mission-bundle endpoint
+  // (non-exclusive, server-side bundle participation); the standalone track uses
+  // the plain mission endpoint.
+  const res = bundleId
+    ? await gamru.integration.missionBundles.join(bundleId, missionId, {
+        email,
+        external_id: userId,
+      })
+    : await gamru.integration.missions.join(missionId, {
+        email,
+        external_id: userId,
+        bundleId: null,
+      });
   if (!res.ok || !res.body) {
     throw new AppError(res.error || "Failed to join mission", res.status ?? 502);
   }
@@ -392,10 +400,11 @@ export const cancelMission = async (
   missionId: string,
   bundleId: string | null = null
 ): Promise<void> => {
-  const res = await gamru.integration.missions.cancel(missionId, {
-    email,
-    bundleId,
-  });
+  const res = bundleId
+    ? await gamru.integration.missionBundles.cancel(bundleId, missionId, {
+        email,
+      })
+    : await gamru.integration.missions.cancel(missionId, { email, bundleId: null });
   if (!res.ok) {
     throw new AppError(res.error || "Failed to cancel mission", res.status ?? 502);
   }
@@ -410,10 +419,11 @@ export const claimMission = async (
   missionId: string,
   bundleId: string | null = null
 ): Promise<{ reward_label: string }> => {
-  const res = await gamru.integration.missions.claim(missionId, {
-    email,
-    bundleId,
-  });
+  const res = bundleId
+    ? await gamru.integration.missionBundles.claim(bundleId, missionId, {
+        email,
+      })
+    : await gamru.integration.missions.claim(missionId, { email, bundleId: null });
   if (!res.ok || !res.body) {
     const message = res.error || "Failed to claim reward";
     throw new AppError(message, res.status ?? 502);
@@ -461,9 +471,14 @@ export const advanceForActivity = async (
     }
   }
 
-  // A bundle-scoped play advanced the bundle track too — mirror that one row.
+  // A bundle-scoped play advanced the bundle track too — mirror that one row
+  // (read it back from the dedicated mission-bundle progress endpoint).
   if (missionId && bundleId) {
-    const pr = await gamru.integration.missions.progress(missionId, email, bundleId);
+    const pr = await gamru.integration.missionBundles.progress(
+      bundleId,
+      missionId,
+      email
+    );
     if (pr.ok && pr.body) {
       const periodKey = bundlePeriodKey(bundleId);
       const { prev, next } = await syncMissionToCache(userId, pr.body, periodKey);

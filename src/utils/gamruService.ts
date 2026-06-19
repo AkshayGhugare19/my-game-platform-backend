@@ -355,6 +355,32 @@ export interface GamruIntMission {
   claimed_at: string | null;
 }
 
+/**
+ * A mission bundle with the player's grouped, per-bundle-track progress merged
+ * in (GAMRU-computed). A bundle is a curated GROUPING of existing missions; the
+ * player joins / progresses / claims each member mission individually. Only
+ * bundles the player is ELIGIBLE for (segment-gated) are returned.
+ */
+export interface GamruIntBundle {
+  id: string;
+  name: string;
+  description: string | null;
+  large_image: string | null;
+  small_image: string | null;
+  bundle_type: string | null;
+  periodicity: string | null;
+  priority: number;
+  eligibility_type: string | null;
+  segments: string[];
+  tags: string[];
+  /** The grouped member missions, each with this player's progress. */
+  missions: GamruIntMission[];
+  /** How many missions the bundle groups (the denominator). */
+  total: number;
+  /** Missions already COMPLETED or CLAIMED on this bundle's track. */
+  completed: number;
+}
+
 export interface GamruIntTournament {
   id: string;
   name: string;
@@ -951,6 +977,64 @@ export const gamru = {
       claim: (id: string, data: { email: string; bundleId?: string | null }) =>
         unwrap<{ reward_label: string; mission: GamruIntMission }>(
           post(`/missions/${id}/claim`, data)
+        ),
+    },
+    missionBundles: {
+      list: (email: string) =>
+        unwrap<{ bundles: GamruIntBundle[] }>(
+          get("/mission-bundles", { email })
+        ),
+      get: (id: string, email: string) =>
+        unwrap<GamruIntBundle>(get(`/mission-bundles/${id}`, { email })),
+      // Per-member-mission lifecycle on the bundle's own track.
+      join: (
+        bundleId: string,
+        missionId: string,
+        data: { email: string; external_id?: string }
+      ) =>
+        unwrap<GamruIntMission>(
+          post(
+            `/mission-bundles/${bundleId}/missions/${missionId}/join`,
+            data
+          )
+        ),
+      cancel: (bundleId: string, missionId: string, data: { email: string }) =>
+        unwrap<{ cancelled: boolean }>(
+          post(
+            `/mission-bundles/${bundleId}/missions/${missionId}/cancel`,
+            data
+          )
+        ),
+      progress: (bundleId: string, missionId: string, email: string) =>
+        unwrap<GamruIntMission>(
+          get(
+            `/mission-bundles/${bundleId}/missions/${missionId}/progress`,
+            { email }
+          )
+        ),
+      advance: (
+        bundleId: string,
+        missionId: string,
+        data: {
+          email: string;
+          stake?: number;
+          win?: boolean;
+          winAmount?: number;
+          gameKey?: string | null;
+        }
+      ) =>
+        unwrap<GamruIntMission>(
+          post(
+            `/mission-bundles/${bundleId}/missions/${missionId}/progress`,
+            data
+          )
+        ),
+      claim: (bundleId: string, missionId: string, data: { email: string }) =>
+        unwrap<{ reward_label: string; mission: GamruIntMission }>(
+          post(
+            `/mission-bundles/${bundleId}/missions/${missionId}/claim`,
+            data
+          )
         ),
     },
     tournaments: {

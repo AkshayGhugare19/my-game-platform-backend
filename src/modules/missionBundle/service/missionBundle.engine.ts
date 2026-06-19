@@ -18,7 +18,7 @@
  *    on the profile payload).
  */
 import { AppError } from "../../../utils/AppError.ts";
-import gamru, {
+import {
   gamruUserProfileData,
   type GamruMission,
   type GamruMissionBundle,
@@ -270,42 +270,26 @@ export const getBundle = async (
 // in the bundle can run at once). Gameplay advances whatever is IN_PROGRESS on
 // any track, so these progress independently of the same mission elsewhere.
 
-export const joinBundleMission = async (
+export const joinBundleMission = (
   userId: string,
   email: string,
   bundleId: string,
   missionId: string
-): Promise<MissionDTO> => {
-  const dto = await joinMission(userId, email, missionId, { bundleId });
-  // Sync participation against the BUNDLE id (not the mission), so the operator
-  // console's bundle "Participated" count reflects joins and never bleeds into
-  // the standalone mission's count. Fire-and-forget.
-  void gamru.participation
-    .record("mission-bundles", bundleId, {
-      email,
-      external_id: userId,
-      status: "IN_PROGRESS",
-    })
-    .catch(() => {});
-  return dto;
-};
+): Promise<MissionDTO> =>
+  // Delegates to the dedicated gamru mission-bundle join endpoint (via the
+  // mission engine), which joins on the bundle's own track AND records the
+  // bundle "Participated" count server-side — no separate participation push.
+  joinMission(userId, email, missionId, { bundleId });
 
-export const claimBundleMission = async (
+export const claimBundleMission = (
   userId: string,
   email: string,
   bundleId: string,
   missionId: string
-): Promise<{ reward_label: string }> => {
-  const result = await claimMission(userId, email, missionId, bundleId);
-  void gamru.participation
-    .record("mission-bundles", bundleId, {
-      email,
-      external_id: userId,
-      status: "CLAIMED",
-    })
-    .catch(() => {});
-  return result;
-};
+): Promise<{ reward_label: string }> =>
+  // Dedicated gamru mission-bundle claim endpoint grants the reward and bumps
+  // the bundle "Participated" count server-side.
+  claimMission(userId, email, missionId, bundleId);
 
 export const cancelBundleMission = (
   userId: string,
