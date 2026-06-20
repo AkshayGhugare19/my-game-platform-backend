@@ -31,7 +31,7 @@ export const list = async (req: AuthRequest, res: Response): Promise<void> => {
     const page = Number(req.query.page) || 1;
     const limit = Math.min(Number(req.query.limit) || 20, 100);
     const unread_only = req.query.unread === "true";
-    const result = await gamru.inbox.list(email, { page, limit, unread_only });
+    const result = await gamru.integration.campaigns.inbox.list(email, { page, limit, unread_only });
 
     if (!result.ok || !result.body) {
       successResponse(res, 200, "Inbox", {
@@ -54,7 +54,7 @@ export const unreadCount = async (
   try {
     const email = await emailOf(req.user!.id);
     const result = email
-      ? await gamru.inbox.list(email, { page: 1, limit: 1 })
+      ? await gamru.integration.campaigns.inbox.list(email, { page: 1, limit: 1 })
       : null;
     successResponse(res, 200, "Unread count", {
       count: result?.ok ? result.body?.unread_count ?? 0 : 0,
@@ -71,7 +71,7 @@ export const read = async (req: AuthRequest, res: Response): Promise<void> => {
       errorResponse(res, 400, "No email on account");
       return;
     }
-    const result = await gamru.inbox.read(req.params.id, email);
+    const result = await gamru.integration.campaigns.inbox.read(req.params.id, email);
     if (!result.ok) {
       errorResponse(res, 502, result.error || "Failed to mark read");
       return;
@@ -89,7 +89,7 @@ export const click = async (req: AuthRequest, res: Response): Promise<void> => {
       errorResponse(res, 400, "No email on account");
       return;
     }
-    const result = await gamru.inbox.click(req.params.id, email);
+    const result = await gamru.integration.campaigns.inbox.click(req.params.id, email);
     if (!result.ok) {
       errorResponse(res, 502, result.error || "Failed to record click");
       return;
@@ -112,7 +112,7 @@ export const unsubscribe = async (
     }
     const channel = String(req.body?.channel ?? "ON_SITE");
     const reason = req.body?.reason as string | undefined;
-    const result = await gamru.inbox.unsubscribe(email, channel, reason);
+    const result = await gamru.integration.campaigns.inbox.unsubscribe(email, channel, reason);
     if (!result.ok) {
       errorResponse(res, 502, result.error || "Failed to unsubscribe");
       return;

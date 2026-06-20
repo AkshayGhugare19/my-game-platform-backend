@@ -45,6 +45,22 @@ export interface GamruInboxResponse {
   };
 }
 
+/**
+ * A lifecycle / gameplay event pushed to GAMRU's campaign trigger engine
+ * (`POST /integration/events`). GAMRU evaluates every event-triggered campaign
+ * against the resolved player + segment and delivers any match to the on-site
+ * inbox. Mirrors the `GamruSyncEvent` shape used by `integration/gamruSync.ts`.
+ */
+export interface GamruIntegrationEvent {
+  event_id: string;
+  /** e.g. USER_REGISTERED | DEPOSIT_MADE | LOGIN | XP_AWARDED | LEVEL_UP | RANK_UP */
+  event_type: string;
+  external_id: string;
+  email?: string | null;
+  amount?: number;
+  meta?: Record<string, unknown>;
+}
+
 /** `gamification.progress` — the player's current level snapshot. */
 export interface GamruGamificationProgress {
   level?: number;
@@ -673,6 +689,35 @@ const unwrap = async <T = unknown>(
 
 type Q = RequestOptions["query"];
 
+/**
+ * Player on-site INBOX client — the READ side of GAMRU's campaign delivery
+ * channel (`/api/inbox/*`, clientAuth, player resolved by email). Shared by
+ * both `gamru.integration.campaigns.inbox` (the canonical grouping, parallel
+ * to `integration.missions` / `tournaments`) and the top-level `gamru.inbox`
+ * backward-compat alias.
+ */
+const inboxApi = {
+  list: (email: string, query?: Q) =>
+    unwrap<GamruInboxResponse>(
+      post("/inbox/list", { email, ...(query ?? {}) })
+    ),
+  read: (id: string, email: string) =>
+    unwrap<GamruInboxItem>(post(`/inbox/${id}/read`, { email })),
+  click: (id: string, email: string) =>
+    unwrap<GamruInboxItem>(post(`/inbox/${id}/click`, { email })),
+  unsubscribe: (
+    email: string,
+    channel: string,
+    reason?: string,
+    campaignName?: string
+  ) =>
+    post("/inbox/unsubscribe", {
+      email,
+      channel,
+      reason,
+      campaign_name: campaignName,
+    }),
+};
 
 export const gamru = {
   /** /api/auth */
@@ -1122,6 +1167,28 @@ export const gamru = {
       tournamentId?: string | null;
       points?: number;
     }) => unwrap<{ missions: GamruIntMission[] }>(post("/activity", data)),
+
+    /**
+     * CRM campaign delivery — the same bridge as `missions` / `tournaments`,
+     * but for messages. Campaigns are AUTHORED in gamru (admin console) and
+     * DELIVERED to the player's on-site inbox here. GAMRU owns segment
+     * resolution, template rendering, consent / frequency-cap enforcement and
+     * analytics; this platform only (a) forwards events that may trigger a
+     * campaign and (b) reads/acks the resulting inbox messages.
+     */
+    campaigns: {
+      /**
+       * Forward a lifecycle / gameplay event so GAMRU evaluates every
+       * event-triggered campaign (Login, Deposit, Registration, …) and
+       * delivers any match. Fire-and-forget at the call sites (registration,
+       * deposit, login); returns the raw `GamruResult` so callers can log a
+       * rejection. `POST /integration/events`.
+       */
+      trigger: (event: GamruIntegrationEvent) =>
+        post(`/integration/events`, { origin: "gamify", ...event }),
+      /** Read side of the channel — the player's on-site inbox. */
+      inbox: inboxApi,
+    },
   },
 
   /** /api/campaigns */
@@ -1279,29 +1346,13 @@ export const gamru = {
     ) => post(`/players/${playerId}/reward-shop/purchase`, data),
   },
 
-  /** /api/inbox — the player's on-site campaign messages (clientAuth, by email). */
-  inbox: {
-    list: (email: string, query?: Q) =>
-      unwrap<GamruInboxResponse>(
-        post("/inbox/list", { email, ...(query ?? {}) })
-      ),
-    read: (id: string, email: string) =>
-      unwrap<GamruInboxItem>(post(`/inbox/${id}/read`, { email })),
-    click: (id: string, email: string) =>
-      unwrap<GamruInboxItem>(post(`/inbox/${id}/click`, { email })),
-    unsubscribe: (
-      email: string,
-      channel: string,
-      reason?: string,
-      campaignName?: string
-    ) =>
-      post("/inbox/unsubscribe", {
-        email,
-        channel,
-        reason,
-        campaign_name: campaignName,
-      }),
-  },
+  /**
+   * /api/inbox — the player's on-site campaign messages (clientAuth, by email).
+   * Backward-compat alias; the canonical grouping is
+   * `gamru.integration.campaigns.inbox` (parallel to `integration.missions` /
+   * `tournaments`). Both point at the same `inboxApi`.
+   */
+  inbox: inboxApi,
 
   /** /api/analytics */
   analytics: {
