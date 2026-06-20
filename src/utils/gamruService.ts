@@ -19,6 +19,32 @@ export interface GamruResult<T = unknown> {
   error?: string;
 }
 
+/** One on-site campaign message in the player's gamru inbox. */
+export interface GamruInboxItem {
+  id: string;
+  campaign_id: string | null;
+  channel: string;
+  title: string;
+  body: string;
+  status: string;
+  read: boolean;
+  event_label: string | null;
+  event_at: string;
+  read_at: string | null;
+}
+
+/** `POST /inbox/list` payload — the player's messages + unread badge count. */
+export interface GamruInboxResponse {
+  unread_count: number;
+  items: GamruInboxItem[];
+  pagination: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  };
+}
+
 /** `gamification.progress` — the player's current level snapshot. */
 export interface GamruGamificationProgress {
   level?: number;
@@ -1251,6 +1277,30 @@ export const gamru = {
       playerId: string,
       data: { shop_item_id: string; quantity?: number }
     ) => post(`/players/${playerId}/reward-shop/purchase`, data),
+  },
+
+  /** /api/inbox — the player's on-site campaign messages (clientAuth, by email). */
+  inbox: {
+    list: (email: string, query?: Q) =>
+      unwrap<GamruInboxResponse>(
+        post("/inbox/list", { email, ...(query ?? {}) })
+      ),
+    read: (id: string, email: string) =>
+      unwrap<GamruInboxItem>(post(`/inbox/${id}/read`, { email })),
+    click: (id: string, email: string) =>
+      unwrap<GamruInboxItem>(post(`/inbox/${id}/click`, { email })),
+    unsubscribe: (
+      email: string,
+      channel: string,
+      reason?: string,
+      campaignName?: string
+    ) =>
+      post("/inbox/unsubscribe", {
+        email,
+        channel,
+        reason,
+        campaign_name: campaignName,
+      }),
   },
 
   /** /api/analytics */

@@ -12,7 +12,10 @@ import { EVENTS } from "../../../events/events.ts";
 import UserRepository from "../../user/model/user.repository.ts";
 import RefreshTokenRepository from "../model/refresh-token.repository.ts";
 import User from "../../user/model/user.model.ts";
-import { seedInitialUserMissions } from "../../mission/service/mission.engine.ts";
+import {
+  seedInitialUserMissions,
+  advanceForLogin,
+} from "../../mission/service/mission.engine.ts";
 import {
   createGamruUser,
   deriveUsername,
@@ -141,6 +144,14 @@ export const loginService = async (
   if (!match) throw new AppError("Invalid email or password", 401);
 
   const tokens = await issueTokens(user, meta);
+
+  // Forward a "login" activity to GAMRU so it can advance login-day missions
+  // AND fire any "Event: Login" campaign into this player's on-site inbox.
+  // Best-effort: a GAMRU outage must never block the login response.
+  void advanceForLogin(user.id).catch((err) =>
+    logger.warn("Login activity forward to GAMRU failed", { error: String(err) })
+  );
+
   const json = user.toJSON() as Record<string, unknown>;
   delete json.password;
   return { ...tokens, user: json };
