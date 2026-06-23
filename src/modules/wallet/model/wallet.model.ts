@@ -5,6 +5,8 @@ export interface WalletAttributes {
   id: string;
   user_id: string;
   balance: number;
+  real_money: number;
+  bonus_money: number;
   currency: string;
   deposit_count: number;
   total_deposit: number;
@@ -16,11 +18,17 @@ export interface WalletAttributes {
  * A player's money wallet. The game platform owns the balance (source of
  * truth); deposits made here are mirrored to Gamru as a DEPOSIT_MADE event so
  * the CRM can move the player from the "no_deposit" segment to "depositor".
+ *
+ * `balance` is the TOTAL and is kept as the invariant
+ * `balance = real_money + bonus_money`. Real Money (RM) holds deposits and
+ * RM-typed bonus claims; Bonus Money (BM) holds BM-typed bonus claims.
  */
 class Wallet extends Model<WalletAttributes> implements WalletAttributes {
   declare id: string;
   declare user_id: string;
   declare balance: number;
+  declare real_money: number;
+  declare bonus_money: number;
   declare currency: string;
   declare deposit_count: number;
   declare total_deposit: number;
@@ -43,6 +51,16 @@ Wallet.init(
       onDelete: "CASCADE",
     },
     balance: {
+      type: DataTypes.FLOAT,
+      allowNull: false,
+      defaultValue: 0,
+    },
+    real_money: {
+      type: DataTypes.FLOAT,
+      allowNull: false,
+      defaultValue: 0,
+    },
+    bonus_money: {
       type: DataTypes.FLOAT,
       allowNull: false,
       defaultValue: 0,

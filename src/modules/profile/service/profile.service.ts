@@ -3,9 +3,11 @@ import { logger } from "../../../utils/logger.ts";
 import type {
   GamruUserProfileData,
   GamruLevelTier,
+  GamruRankTier,
 } from "../../../utils/gamruService.ts";
 import { gamruUserProfileData } from "../../../utils/gamruService.ts";
 import UserRepository from "../../user/model/user.repository.ts";
+import { reconcileBonusGrants } from "../../bonus/service/bonus.engine.ts";
 
 interface ProfileUser {
   id: string;
@@ -272,6 +274,15 @@ export const getProfile = async (
         created_at: l.created_at,
       }))
     : [];
+
+  // Pointer-pattern grant trigger: GAMRU authored bonusIds on each level/rank;
+  // reconcile any newly-reached ones into `user_bonuses`. Fire-and-forget — a
+  // bonus failure must never break the profile read.
+  void reconcileBonusGrants(user.id, {
+    levels: levelTiers,
+    ranks: (g?.ranks ?? []) as GamruRankTier[],
+    currentLevel: level,
+  }).catch(() => {});
 
   return {
     user: {

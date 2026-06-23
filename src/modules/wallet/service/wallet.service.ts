@@ -7,6 +7,8 @@ const round2 = (n: number): number => Math.round(n * 100) / 100;
 
 export interface WalletView {
   balance: number;
+  realMoney: number;
+  bonusMoney: number;
   currency: string;
   depositCount: number;
   totalDeposit: number;
@@ -14,6 +16,8 @@ export interface WalletView {
 
 const toView = (wallet: Wallet): WalletView => ({
   balance: round2(Number(wallet.balance ?? 0)),
+  realMoney: round2(Number(wallet.real_money ?? 0)),
+  bonusMoney: round2(Number(wallet.bonus_money ?? 0)),
   currency: wallet.currency ?? "USD",
   depositCount: Number(wallet.deposit_count ?? 0),
   totalDeposit: round2(Number(wallet.total_deposit ?? 0)),
@@ -41,7 +45,12 @@ export const deposit = async (
   }
 
   const wallet = await WalletRepository.findOrCreateByUserId(userId);
-  wallet.balance = round2(Number(wallet.balance ?? 0) + value);
+  // A deposit is Real Money. Credit RM and keep the invariant
+  // balance = real_money + bonus_money.
+  wallet.real_money = round2(Number(wallet.real_money ?? 0) + value);
+  wallet.balance = round2(
+    Number(wallet.real_money ?? 0) + Number(wallet.bonus_money ?? 0)
+  );
   wallet.deposit_count = Number(wallet.deposit_count ?? 0) + 1;
   wallet.total_deposit = round2(Number(wallet.total_deposit ?? 0) + value);
   await wallet.save();

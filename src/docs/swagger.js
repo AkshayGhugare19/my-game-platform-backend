@@ -10,6 +10,7 @@ const ROUTE_GROUPS = [
   { prefix: "/api/mission-bundles", tag: "Mission Bundles", router: def(require("../route/missionBundle.routes")) },
   { prefix: "/api/tournaments", tag: "Tournaments", router: def(require("../route/tournament.routes")) },
   { prefix: "/api/rewards", tag: "Rewards", router: def(require("../route/reward.routes")) },
+  { prefix: "/api/bonuses", tag: "Bonuses", router: def(require("../route/bonus.routes")) },
   { prefix: "/api/reward-shop", tag: "Reward Shop", router: def(require("../route/reward-shop.routes")) },
   { prefix: "/api/wallet", tag: "Wallet", router: def(require("../route/wallet.routes")) },
   { prefix: "/api/leaderboard", tag: "Leaderboard", router: def(require("../route/leaderboard.routes")) },

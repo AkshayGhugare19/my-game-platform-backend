@@ -9,6 +9,10 @@ import UserRepository from "../../user/model/user.repository.ts";
 import WalletRepository from "../../wallet/model/wallet.repository.ts";
 import { gamru, gamruUserProfileData } from "../../../utils/gamruService.ts";
 import { readPageParams, paginateArray } from "../../../utils/pagination.ts";
+import {
+  listUserBonusRows,
+  pendingBonusCount,
+} from "../../bonus/service/bonus.engine.ts";
 
 /** Trailing number in a reward label, e.g. "Weekend Race prize — 500" → 500. */
 const parseTrailingAmount = (label?: string | null): number => {
@@ -39,6 +43,10 @@ export const getMyRewards = async (
     // Gamru is the source of truth for mission/level/manual rewards.
     // Fall back to the local table if gamru is unreachable so the page
     // still renders something instead of an empty state on a transient blip.
+    // Local bonus grants surface in the SAME Rewards list (ahead of GAMRU rows)
+    // and light the Claim button — the frontend routes their claim by `is_bonus`.
+    const bonusRows = await listUserBonusRows(req.user!.id, status);
+
     const user = await UserRepository.findByPk(req.user!.id);
     if (user?.email) {
       const gamru = await gamruUserProfileData(user.email);
@@ -48,11 +56,13 @@ export const getMyRewards = async (
             (r) => String(r.status ?? "").toUpperCase() === status.toUpperCase()
           )
         : rows;
-      successResponse(res, 200, "My rewards", paginateArray(filtered, page, limit));
+      const merged = [...bonusRows, ...filtered];
+      successResponse(res, 200, "My rewards", paginateArray(merged, page, limit));
       return;
     }
     const data = await UserRewardRepository.listByUser(req.user!.id, status);
-    successResponse(res, 200, "My rewards", paginateArray(data, page, limit));
+    const merged = [...bonusRows, ...data];
+    successResponse(res, 200, "My rewards", paginateArray(merged, page, limit));
   } catch {
     errorResponse(res, 500, "Failed to load rewards");
   }
@@ -112,8 +122,15 @@ export const claim = async (
         const amount = parseTrailingAmount(claimedReward.reward);
         if (amount > 0) {
           const wallet = await WalletRepository.findOrCreateByUserId(req.user!.id);
+          // A tournament prize is Real Money — credit RM and keep the
+          // invariant balance = real_money + bonus_money.
+          wallet.real_money =
+            Math.round((Number(wallet.real_money ?? 0) + amount) * 100) / 100;
           wallet.balance =
-            Math.round((Number(wallet.balance ?? 0) + amount) * 100) / 100;
+            Math.round(
+              (Number(wallet.real_money ?? 0) + Number(wallet.bonus_money ?? 0)) *
+                100
+            ) / 100;
           await wallet.save();
           balance = wallet.balance;
         }
@@ -139,6 +156,7 @@ export const getPendingCount = async (
   res: Response
 ): Promise<void> => {
   try {
+    const bonusPending = await pendingBonusCount(req.user!.id);
     const user = await UserRepository.findByPk(req.user!.id);
     if (user?.email) {
       const gamru = await gamruUserProfileData(user.email);
@@ -146,11 +164,13 @@ export const getPendingCount = async (
       const count = rows.filter(
         (r) => String(r.status ?? "").toUpperCase() === "IN_PROGRESS"
       ).length;
-      successResponse(res, 200, "Pending rewards", { count });
+      successResponse(res, 200, "Pending rewards", { count: count + bonusPending });
       return;
     }
     const rows = await UserRewardRepository.listByUser(req.user!.id, "GRANTED");
-    successResponse(res, 200, "Pending rewards", { count: rows.length });
+    successResponse(res, 200, "Pending rewards", {
+      count: rows.length + bonusPending,
+    });
   } catch {
     successResponse(res, 200, "Pending rewards", { count: 0 });
   }

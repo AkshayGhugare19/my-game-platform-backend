@@ -6,10 +6,16 @@ const { randomUUID } = require("crypto");
 /** Scalable closed-form level curve: minXp(L) = BASE*(G^L - 1)/(G - 1). */
 const BASE = 100;
 const G = 1.6;
+// The geometric curve explodes (1.6^200 ≈ 1e40) — far past PostgreSQL BIGINT
+// (max ~9.2e18) and JS safe-integer range. Clamp to a safe ceiling so the
+// insert never overflows, keeping the ladder strictly increasing (capped
+// levels stay distinct via `+ L`). Low/mid levels are unchanged.
+const SAFE_CAP = 9_000_000_000_000_000; // 9e15 — within BIGINT and Number.MAX_SAFE_INTEGER
 const levelTiers = (() => {
   const rows = [];
   for (let L = 0; L <= 200; L++) {
-    const minXp = L === 0 ? 0 : Math.round((BASE * (Math.pow(G, L) - 1)) / (G - 1));
+    const raw = L === 0 ? 0 : Math.round((BASE * (Math.pow(G, L) - 1)) / (G - 1));
+    const minXp = raw > SAFE_CAP ? SAFE_CAP + L : raw;
     rows.push({
       level: L,
       min_xp: minXp,

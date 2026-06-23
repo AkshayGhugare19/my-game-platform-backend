@@ -88,6 +88,19 @@ export interface GamruLevelTier {
   xp_end?: number;
   reward_type?: string | null;
   reward_value?: number | null;
+  /** SDLCGames bonus ids the operator pinned to this level (pointer pattern). */
+  bonusIds?: string[];
+}
+
+/** One entry of `gamification.ranks` — a rank as authored in GAMRU. */
+export interface GamruRankTier {
+  id?: string;
+  name?: string;
+  description?: string;
+  /** SDLCGames bonus ids pinned rank-wide (also mirrored in `data.bonus_ids`). */
+  bonusIds?: string[];
+  data?: Record<string, unknown>;
+  [key: string]: unknown;
 }
 
 /** One entry of `gamification.logs` — an audited gamification action. */
@@ -110,7 +123,7 @@ export interface GamruGamification {
   progress?: GamruGamificationProgress;
   next_rank?: GamruNextRank | null;
   levels?: GamruLevelTier[];
-  ranks?: Array<Record<string, unknown>>;
+  ranks?: GamruRankTier[];
   missions?: GamruMission[];
   mission_bundles?: GamruMissionBundle[];
   reward_shop?: unknown[];
@@ -1353,6 +1366,26 @@ export const gamru = {
    * `tournaments`). Both point at the same `inboxApi`.
    */
   inbox: inboxApi,
+
+  /**
+   * /api/user-bonuses — mirror a claimed bonus into GAMRU's user_bonuses ledger
+   * (clientAuth, player resolved by email). GAMRU also upserts a snapshot of the
+   * bonus into its `bonuses` table. Fire-and-forget at the call site — a GAMRU
+   * outage must never fail the player's claim.
+   */
+  bonuses: {
+    recordClaim: (data: {
+      email: string;
+      external_id?: string;
+      external_bonus_id: string;
+      bonus_name: string;
+      bonus_type?: string;
+      source_type: string;
+      source_id: string;
+      amount: number;
+      amount_type: string;
+    }) => post("/user-bonuses/record", data),
+  },
 
   /** /api/analytics */
   analytics: {

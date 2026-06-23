@@ -5,6 +5,8 @@ import ActivityLog from "../modules/activity/model/activity-log.model.ts";
 import UserMission from "../modules/mission/model/user-mission.model.ts";
 import Reward from "../modules/reward/model/reward.model.ts";
 import UserReward from "../modules/reward/model/user-reward.model.ts";
+import Bonus from "../modules/bonus/model/bonus.model.ts";
+import UserBonus from "../modules/bonus/model/user-bonus.model.ts";
 import Achievement from "../modules/achievement/model/achievement.model.ts";
 import UserAchievement from "../modules/achievement/model/user-achievement.model.ts";
 import Notification from "../modules/notification/model/notification.model.ts";
@@ -41,6 +43,13 @@ export const initAssociations = (): void => {
   UserReward.belongsTo(Reward, { foreignKey: "reward_id", as: "reward" });
   User.hasMany(UserReward, { foreignKey: "user_id", as: "rewards" });
   UserReward.belongsTo(User, { foreignKey: "user_id", as: "user" });
+
+  // Bonuses — `user_bonuses.bonus_id` references the local bonus catalog;
+  // grants are pinned to GAMRU-authored levels/ranks (pointer pattern).
+  Bonus.hasMany(UserBonus, { foreignKey: "bonus_id", as: "userBonuses" });
+  UserBonus.belongsTo(Bonus, { foreignKey: "bonus_id", as: "bonus" });
+  User.hasMany(UserBonus, { foreignKey: "user_id", as: "bonuses" });
+  UserBonus.belongsTo(User, { foreignKey: "user_id", as: "user" });
 
   // Achievements
   Achievement.hasMany(UserAchievement, {
