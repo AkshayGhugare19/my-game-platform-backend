@@ -123,7 +123,7 @@ module.exports = {
         first_name: "Admin",
         last_name: "User",
         username: "admin",
-        email: "admin@test.com",
+        email: "gameplatformadmin@test.com",
         mobile: "9999999999",
         password: bcrypt.hashSync("123456", 12),
         role: "ADMIN",
