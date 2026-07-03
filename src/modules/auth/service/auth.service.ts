@@ -24,8 +24,8 @@ import { syncToGamru } from "../../../integration/gamruSync.ts";
 import { logger } from "../../../utils/logger.ts";
 
 interface RegisterInput {
-  first_name: string;
-  last_name: string;
+  first_name?: string;
+  last_name?: string;
   email: string;
   mobile: string;
   password: string;
@@ -47,8 +47,8 @@ export const registerService = async (input: RegisterInput) => {
   const hash = await bcrypt.hash(plaintext, 12);
 
   const user = await User.create({
-    first_name: input.first_name,
-    last_name: input.last_name,
+    first_name: input.first_name || "",
+    last_name: input.last_name || "",
     email: input.email,
     mobile: input.mobile,
     password: hash,
@@ -65,8 +65,8 @@ export const registerService = async (input: RegisterInput) => {
   // loudly so an operator can spot a misconfigured client_auth_key or a
   // disabled client immediately.
   const gamruRes = await createGamruUser({
-    first_name: input.first_name,
-    last_name: input.last_name,
+    first_name: input.first_name || "",
+    last_name: input.last_name || "",
     email: input.email,
     mobile: input.mobile,
     password: plaintext,
