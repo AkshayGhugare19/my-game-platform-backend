@@ -12,6 +12,15 @@ export const recordActivitySchema = Joi.object({
     "any.required": "idempotencyKey is required (prevents double-award)",
   }),
   meta: Joi.object().optional(),
+  // Optional Challenges/Races passthrough fields — additive only, stored
+  // into `meta` and forwarded to gamru's /activity call when present.
+  currency: Joi.string().optional(),
+  isBonus: Joi.boolean().optional(),
+  multiplier: Joi.number().optional(),
+  provider: Joi.string().optional(),
+  roundId: Joi.string().optional(),
+  challengeId: Joi.string().optional(),
+  raceId: Joi.string().optional(),
 });
 
 export const paginationSchema = Joi.object({

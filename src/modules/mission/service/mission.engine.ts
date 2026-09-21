@@ -440,6 +440,19 @@ export interface PlaySignal {
   win: boolean;
   winAmount: number;
   gameKey?: string | null;
+  /**
+   * Optional Challenges/Races passthrough fields — additive only, not
+   * matched against anything by mission progress today. Forwarded to
+   * gamru's `/activity` call when present so a future Challenge/Race
+   * matcher on gamru's side can read them.
+   */
+  currency?: string;
+  isBonus?: boolean;
+  multiplier?: number;
+  provider?: string;
+  roundId?: string;
+  challengeId?: string;
+  raceId?: string;
 }
 
 export const advanceForActivity = async (
@@ -461,6 +474,19 @@ export const advanceForActivity = async (
     gameKey: signal.gameKey,
     missionId,
     bundleId,
+    // Optional Challenges/Races passthrough — additive, only sent when the
+    // caller actually supplied them (existing callers are unaffected).
+    ...(signal.currency !== undefined ? { currency: signal.currency } : {}),
+    ...(signal.isBonus !== undefined ? { isBonus: signal.isBonus } : {}),
+    ...(signal.multiplier !== undefined
+      ? { multiplier: signal.multiplier }
+      : {}),
+    ...(signal.provider !== undefined ? { provider: signal.provider } : {}),
+    ...(signal.roundId !== undefined ? { roundId: signal.roundId } : {}),
+    ...(signal.challengeId !== undefined
+      ? { challengeId: signal.challengeId }
+      : {}),
+    ...(signal.raceId !== undefined ? { raceId: signal.raceId } : {}),
   });
 
   // The activity response carries the player's standalone mission snapshot.

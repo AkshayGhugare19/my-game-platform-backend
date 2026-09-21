@@ -496,6 +496,66 @@ export interface GamruIntTournamentHistory {
   last_played_at: string | null;
 }
 
+/**
+ * A challenge with the player's GAMRU-computed progress merged in
+ * (`GET /api/challenges` / `/api/challenges/:id`). Mirrors `GamruIntMission`'s
+ * role for the new Challenges feature. The full field set is authored /
+ * computed entirely on gamru's side; only the fields this platform actually
+ * reads are first-class, everything else passes through via the index
+ * signature.
+ */
+export interface GamruIntChallenge {
+  id: string;
+  name: string;
+  description?: string | null;
+  status: string;
+  progress?: number;
+  target?: number;
+  reward_label?: string;
+  completed_at?: string | null;
+  claimed_at?: string | null;
+  [key: string]: unknown;
+}
+
+/** `GET /api/challenges/:id/progress` — a player's live challenge progress. */
+export interface GamruIntChallengeProgress {
+  challenge_id?: string;
+  status?: string;
+  progress?: number;
+  target?: number;
+  completed_at?: string | null;
+  claimed_at?: string | null;
+  [key: string]: unknown;
+}
+
+/**
+ * A race with the player's GAMRU-computed standing merged in
+ * (`GET /api/races` / `/api/races/:id`). Mirrors `GamruIntTournament`'s role
+ * for the new Races feature.
+ */
+export interface GamruIntRace {
+  id: string;
+  name: string;
+  description?: string | null;
+  status?: string;
+  state?: "SCHEDULED" | "IN_PROGRESS" | "ENDED" | string;
+  [key: string]: unknown;
+}
+
+/** `GET /api/races/:id/progress` and `POST /api/races/:id/join` response. */
+export interface GamruIntRaceProgress {
+  race_id?: string;
+  registered?: boolean;
+  score?: number;
+  plays?: number;
+  rank?: number | null;
+  prize_amount?: number;
+  prize_awarded?: boolean;
+  claimed?: boolean;
+  status?: string | null;
+  [key: string]: unknown;
+}
+
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 interface RequestOptions {
@@ -1156,6 +1216,70 @@ export const gamru = {
       claim: (id: string, data: { email: string }) =>
         unwrap<{ prize: number }>(post(`/tournaments/${id}/claim`, data)),
     },
+    /**
+     * Challenges — sibling to `missions`, same clientAuth + email-keyed
+     * progression API shape (`/api/challenges/*`). GAMRU is the source of
+     * truth; this platform only forwards the call and returns the response.
+     */
+    challenges: {
+      list: (email: string) =>
+        unwrap<{ challenges: GamruIntChallenge[] }>(
+          get("/challenges", { email })
+        ),
+      get: (id: string, email: string) =>
+        unwrap<GamruIntChallenge>(get(`/challenges/${id}`, { email })),
+      join: (id: string, email: string, externalId?: string) =>
+        unwrap<GamruIntChallenge>(
+          post(`/challenges/${id}/join`, {
+            email,
+            external_id: externalId,
+          })
+        ),
+      cancel: (id: string, email: string) =>
+        unwrap<{ cancelled: boolean }>(
+          post(`/challenges/${id}/cancel`, { email })
+        ),
+      progress: (id: string, email: string) =>
+        unwrap<GamruIntChallengeProgress>(
+          get(`/challenges/${id}/progress`, { email })
+        ),
+      claim: (id: string, email: string) =>
+        unwrap<{ reward_label: string; challenge: GamruIntChallenge }>(
+          post(`/challenges/${id}/claim`, { email })
+        ),
+    },
+    /**
+     * Races — sibling to `tournaments`, same clientAuth + email-keyed
+     * progression API shape (`/api/races/*`). GAMRU is the source of truth;
+     * this platform only forwards the call and returns the response.
+     */
+    races: {
+      list: (email: string) =>
+        unwrap<{ races: GamruIntRace[] }>(get("/races", { email })),
+      get: (id: string, email: string) =>
+        unwrap<{ race: GamruIntRace; leaderboard: GamruIntLeaderboardEntry[] }>(
+          get(`/races/${id}`, { email })
+        ),
+      join: (id: string, email: string) =>
+        unwrap<GamruIntRaceProgress>(post(`/races/${id}/join`, { email })),
+      progress: (id: string, email: string) =>
+        unwrap<GamruIntRaceProgress>(
+          get(`/races/${id}/progress`, { email })
+        ),
+      leaderboard: (id: string, email: string, size?: number | null) =>
+        unwrap<{ leaderboard: GamruIntLeaderboardEntry[] }>(
+          get(`/races/${id}/leaderboard`, { email, size: size ?? undefined })
+        ),
+      score: (
+        id: string,
+        data: { email: string; points: number; game?: string | null }
+      ) =>
+        unwrap<{ race_id: string; score: number; applied: number }>(
+          post(`/races/${id}/score`, data)
+        ),
+      claim: (id: string, email: string) =>
+        unwrap<{ prize: number }>(post(`/races/${id}/claim`, { email })),
+    },
     users: {
       missions: (userId: string, email: string) =>
         unwrap<{ missions: GamruIntMission[] }>(
@@ -1166,7 +1290,13 @@ export const gamru = {
           get(`/users/${userId}/tournaments`, { email })
         ),
     },
-    /** Forward a gameplay / login event so GAMRU advances progress. */
+    /**
+     * Forward a gameplay / login event so GAMRU advances progress. The
+     * `currency`/`isBonus`/`multiplier`/`provider`/`roundId`/`challengeId`/
+     * `raceId` fields are optional and purely additive — forwarded to gamru
+     * only when the caller supplies them; existing callers (mission/
+     * tournament engines) are unaffected.
+     */
     activity: (data: {
       email: string;
       external_id?: string;
@@ -1179,6 +1309,13 @@ export const gamru = {
       bundleId?: string | null;
       tournamentId?: string | null;
       points?: number;
+      currency?: string;
+      isBonus?: boolean;
+      multiplier?: number;
+      provider?: string;
+      roundId?: string;
+      challengeId?: string;
+      raceId?: string;
     }) => unwrap<{ missions: GamruIntMission[] }>(post("/activity", data)),
 
     /**

@@ -15,10 +15,55 @@ export interface RecordActivityInput {
   amount?: number; // bet size — analytics only, NOT used for XP
   idempotencyKey: string;
   meta?: Record<string, unknown>;
+  /**
+   * Optional Challenges/Races passthrough fields — additive only, not used
+   * by the existing XP/mission/tournament paths. Stored into `meta`
+   * alongside whatever the caller already put there (no new activity_logs
+   * columns — `meta` already exists for exactly this, the same way
+   * gameKey/stake/win/winAmount are threaded through today) and read back
+   * out of `meta` by `registerHandlers.ts`'s ACTIVITY_RECORDED listener to
+   * forward to gamru's `/activity` call when present.
+   */
+  currency?: string;
+  isBonus?: boolean;
+  multiplier?: number;
+  provider?: string;
+  roundId?: string;
+  challengeId?: string;
+  raceId?: string;
 }
 
 export const recordActivity = async (input: RecordActivityInput) => {
-  const { userId, type, gameId, amount, idempotencyKey, meta } = input;
+  const {
+    userId,
+    type,
+    gameId,
+    amount,
+    idempotencyKey,
+    meta,
+    currency,
+    isBonus,
+    multiplier,
+    provider,
+    roundId,
+    challengeId,
+    raceId,
+  } = input;
+
+  // Merge the optional Challenges/Races passthrough fields into `meta` —
+  // additive only, only set when the caller actually supplied them.
+  const passthrough: Record<string, unknown> = {};
+  if (currency !== undefined) passthrough.currency = currency;
+  if (isBonus !== undefined) passthrough.isBonus = isBonus;
+  if (multiplier !== undefined) passthrough.multiplier = multiplier;
+  if (provider !== undefined) passthrough.provider = provider;
+  if (roundId !== undefined) passthrough.roundId = roundId;
+  if (challengeId !== undefined) passthrough.challengeId = challengeId;
+  if (raceId !== undefined) passthrough.raceId = raceId;
+  const mergedMeta: Record<string, unknown> | undefined =
+    Object.keys(passthrough).length > 0
+      ? { ...(meta ?? {}), ...passthrough }
+      : meta;
 
   const existing = await ActivityLogRepository.byIdempotencyKey(idempotencyKey);
   console.log("Existing activity with same idempotencyKey:", existing);
@@ -31,7 +76,7 @@ export const recordActivity = async (input: RecordActivityInput) => {
         amount: amount ?? null,
         idempotency_key: idempotencyKey,
         processed: true,
-        meta: meta ?? {},
+        meta: mergedMeta ?? {},
       });
     } catch (e) {
       if ((e as { name?: string }).name !== "SequelizeUniqueConstraintError")
@@ -44,7 +89,7 @@ export const recordActivity = async (input: RecordActivityInput) => {
     ruleCode: type,
     source: "ACTIVITY",
     idempotencyKey,
-    meta,
+    meta: mergedMeta,
   });
  console.log("XP engine result:", result);
   bus.emit(EVENTS.ACTIVITY_RECORDED, {
@@ -53,7 +98,7 @@ export const recordActivity = async (input: RecordActivityInput) => {
     ruleCode: type,
     idempotencyKey,
     amount: amount ?? 0,
-    meta,
+    meta: mergedMeta,
   });
 
   let gamru: GamruAddXpPointUserResponse | null = null;
@@ -89,7 +134,7 @@ export const recordActivity = async (input: RecordActivityInput) => {
       if (email) {
         // Forward game metadata so gamru can build the player's
         // casino personalization (category/provider mix + favorites).
-        const m = (meta ?? {}) as Record<string, unknown>;
+        const m = (mergedMeta ?? {}) as Record<string, unknown>;
         const game = {
           id: gameId ?? null,
           name: (m.name as string | undefined) ?? (m.game as string | undefined) ?? null,

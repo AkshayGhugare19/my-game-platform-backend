@@ -63,9 +63,33 @@ export const registerEventHandlers = (): void => {
     // bundle card (carried in the activity meta) — advances only that track.
     const missionId = (m.mission as string | undefined) ?? null;
     const bundleId = (m.bundle as string | undefined) ?? null;
+    // Optional Challenges/Races passthrough fields — additive, forwarded to
+    // gamru's `/activity` call only when the caller supplied them via
+    // recordActivity()'s optional top-level fields (see activity.service.ts).
+    const currency = typeof m.currency === "string" ? m.currency : undefined;
+    const isBonus = typeof m.isBonus === "boolean" ? m.isBonus : undefined;
+    const multiplier =
+      typeof m.multiplier === "number" ? m.multiplier : undefined;
+    const provider = typeof m.provider === "string" ? m.provider : undefined;
+    const roundId = typeof m.roundId === "string" ? m.roundId : undefined;
+    const challengeId =
+      typeof m.challengeId === "string" ? m.challengeId : undefined;
+    const raceId = typeof m.raceId === "string" ? m.raceId : undefined;
     await advanceForActivity(
       p.userId,
-      { stake, win, winAmount, gameKey },
+      {
+        stake,
+        win,
+        winAmount,
+        gameKey,
+        currency,
+        isBonus,
+        multiplier,
+        provider,
+        roundId,
+        challengeId,
+        raceId,
+      },
       { missionId, bundleId }
     );
   });

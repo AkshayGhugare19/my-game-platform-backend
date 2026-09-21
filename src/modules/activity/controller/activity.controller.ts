@@ -16,6 +16,14 @@ export const postActivity = async (
       amount: req.body.amount,
       idempotencyKey: req.body.idempotencyKey,
       meta: req.body.meta,
+      // Optional Challenges/Races passthrough — additive only.
+      currency: req.body.currency,
+      isBonus: req.body.isBonus,
+      multiplier: req.body.multiplier,
+      provider: req.body.provider,
+      roundId: req.body.roundId,
+      challengeId: req.body.challengeId,
+      raceId: req.body.raceId,
     });
     successResponse(res, 201, "Activity recorded", data);
   } catch (e) {
