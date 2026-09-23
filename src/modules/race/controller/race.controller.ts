@@ -108,7 +108,7 @@ export const claim = async (
   res: Response
 ): Promise<void> => {
   try {
-    const data = await claimRace(req.user!.email, req.params.id);
+    const data = await claimRace(req.user!.id, req.user!.email, req.params.id);
     successResponse(res, 200, "Race prize claimed", data);
   } catch (e) {
     if (e instanceof AppError) errorResponse(res, e.statusCode, e.message);

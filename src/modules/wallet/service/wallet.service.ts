@@ -88,6 +88,63 @@ export const creditFreeSpins = async (
 };
 
 /**
+ * Apply a reward gamru just claimed on the player's behalf (mission,
+ * tournament, challenge, race, or reward-shop purchase — see each
+ * `applied.type` field on those claim responses) to this platform's own
+ * wallet / free-spins ledger. gamru itself only ever credits `xp`/`tokens`
+ * (its own native currencies, applied inside its own claim transaction);
+ * everything else needs the local credit below since it's the only place
+ * those balances exist. Best-effort: a failure here must never surface as a
+ * failed claim — the player already has the claim recorded in gamru's
+ * ledger, so log and move on rather than throw.
+ */
+export const applyClaimedReward = async (
+  userId: string,
+  applied: { type: string; amount: number },
+  rewardGame: string | null,
+  source: string,
+  sourceId: string
+): Promise<void> => {
+  const { type, amount } = applied;
+  if (!(amount > 0)) return;
+  try {
+    if (type === "real_cash") {
+      await creditWallet(userId, amount, "real_money");
+    } else if (type === "bonus_cash") {
+      await creditWallet(userId, amount, "bonus_money");
+    } else if (type === "free_spins" && rewardGame) {
+      await creditFreeSpins(userId, rewardGame, amount, source, sourceId);
+    } else if (type === "free_spins" && !rewardGame) {
+      // The admin configured "Free Spins" but left "Reward Game" blank on the
+      // source mission/tournament/challenge/race — gamru has nothing to tell
+      // us which game to credit. Surfaced loudly (was previously a true
+      // no-op with zero logging) so a misconfigured reward doesn't look like
+      // a successful claim with the player's spins simply missing.
+      console.error("Free spins claim has no reward_game configured — nothing credited:", {
+        userId,
+        source,
+        sourceId,
+        amount,
+      });
+    }
+    // "xp"/"tokens" are already applied by gamru itself; every other legacy
+    // label (e.g. "bonus_bets", "points") has no wallet bucket on this
+    // platform, so it's intentionally left as a no-op here (same as before
+    // this fix — still recorded in gamru's reward ledger either way).
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("Failed to apply claimed reward to local wallet:", {
+      userId,
+      applied,
+      rewardGame,
+      source,
+      sourceId,
+      error: (err as Error).message,
+    });
+  }
+};
+
+/**
  * Credit the user's wallet by `amount`, then mirror the deposit to Gamru so
  * the player moves from the "no_deposit" segment into "depositor". The Gamru
  * push is fire-and-forget — a CRM outage must never fail the deposit.

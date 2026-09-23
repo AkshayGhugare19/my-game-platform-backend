@@ -28,6 +28,7 @@ export interface RecordActivityInput {
   isBonus?: boolean;
   multiplier?: number;
   provider?: string;
+  category?: string;
   roundId?: string;
   challengeId?: string;
   raceId?: string;
@@ -45,6 +46,7 @@ export const recordActivity = async (input: RecordActivityInput) => {
     isBonus,
     multiplier,
     provider,
+    category,
     roundId,
     challengeId,
     raceId,
@@ -57,6 +59,7 @@ export const recordActivity = async (input: RecordActivityInput) => {
   if (isBonus !== undefined) passthrough.isBonus = isBonus;
   if (multiplier !== undefined) passthrough.multiplier = multiplier;
   if (provider !== undefined) passthrough.provider = provider;
+  if (category !== undefined) passthrough.category = category;
   if (roundId !== undefined) passthrough.roundId = roundId;
   if (challengeId !== undefined) passthrough.challengeId = challengeId;
   if (raceId !== undefined) passthrough.raceId = raceId;

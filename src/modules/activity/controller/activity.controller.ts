@@ -21,6 +21,7 @@ export const postActivity = async (
       isBonus: req.body.isBonus,
       multiplier: req.body.multiplier,
       provider: req.body.provider,
+      category: req.body.category,
       roundId: req.body.roundId,
       challengeId: req.body.challengeId,
       raceId: req.body.raceId,

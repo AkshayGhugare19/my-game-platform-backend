@@ -13,6 +13,7 @@ import gamru, {
   type GamruIntChallenge,
   type GamruIntChallengeProgress,
 } from "../../../utils/gamruService.ts";
+import { applyClaimedReward } from "../../wallet/service/wallet.service.ts";
 
 export type ChallengeDTO = GamruIntChallenge;
 
@@ -90,6 +91,7 @@ export const getChallengeProgress = async (
 };
 
 export const claimChallenge = async (
+  userId: string,
   email: string,
   challengeId: string
 ): Promise<{ reward_label: string }> => {
@@ -100,5 +102,17 @@ export const claimChallenge = async (
       res.status ?? 502
     );
   }
+
+  // gamru's own claim only ever credits xp/tokens directly; everything else
+  // (real_cash/bonus_cash/free_spins) needs crediting to THIS platform's
+  // wallet/free-spins ledger — see wallet.service.ts's applyClaimedReward.
+  await applyClaimedReward(
+    userId,
+    res.body.applied,
+    res.body.reward_game,
+    "challenges",
+    challengeId
+  );
+
   return { reward_label: res.body.reward_label };
 };

@@ -17,7 +17,7 @@ import gamru, {
 } from "../../../utils/gamruService.ts";
 import UserTournamentRepository from "../model/user-tournament.repository.ts";
 import UserRepository from "../../user/model/user.repository.ts";
-import WalletRepository from "../../wallet/model/wallet.repository.ts";
+import { applyClaimedReward, getWallet } from "../../wallet/service/wallet.service.ts";
 import { pushNotification } from "../../notification/service/notification.service.ts";
 
 export type TournamentState = "SCHEDULED" | "IN_PROGRESS" | "ENDED";
@@ -41,6 +41,8 @@ export interface TournamentLeaderboardEntry {
   prize: number;
   /** Whether this player already claimed their prize (from GAMRU). */
   claimed: boolean;
+  /** The tournament's configured reward type (e.g. "bonus_cash", "free_spins") — same for every row. */
+  reward_type: string;
 }
 
 const DEFAULT_BRANDING: TournamentBranding = {
@@ -57,6 +59,14 @@ const toStr = (v: unknown): string | null => {
 };
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
+
+/** Prize amounts aren't always dollars — render per the tournament's configured Reward Type. */
+const formatPrizeText = (amount: number, rewardType?: string): string => {
+  if (rewardType === "free_spins") return `${amount} Free Spins`;
+  if (rewardType === "tokens") return `${amount} Tokens`;
+  if (rewardType === "xp") return `${amount} XP`;
+  return `$${amount}`; // real_cash / bonus_cash / unset
+};
 
 const mapBranding = (
   cfg: GamruWidgetsConfig | null | undefined
@@ -125,6 +135,7 @@ const notifyPrizeAvailableOnce = async (
     prize: number;
     claimed: boolean;
     rank?: number | null;
+    reward_type?: string;
   }
 ): Promise<void> => {
   if (!(t.prize > 0) || t.claimed) return;
@@ -135,7 +146,7 @@ const notifyPrizeAvailableOnce = async (
     userId,
     "REWARD_UNLOCKED",
     `Tournament ended: ${t.name} 🏆`,
-    `You won a $${t.prize} prize pool — claim it now from the tournament or your rewards!`,
+    `You won ${formatPrizeText(t.prize, t.reward_type)} — claim it now from the tournament or your rewards!`,
     { tournamentId: t.tournament_id, kind: "tournament_prize" }
   );
   await syncTournamentToCache(userId, t.tournament_id, {
@@ -192,6 +203,7 @@ export const getTournament = async (
     is_me: e.is_me,
     prize: round2(e.prize),
     claimed: Boolean(e.claimed),
+    reward_type: e.reward_type,
   }));
 
   // Mirror the player's own standing into the cache for history / fallback.
@@ -204,6 +216,7 @@ export const getTournament = async (
       prize: round2(me.prize),
       claimed: Boolean(me.claimed),
       rank: me.rank,
+      reward_type: me.reward_type,
     });
     await syncTournamentToCache(userId, tournamentId, {
       score: me.score,
@@ -242,6 +255,7 @@ export interface TournamentHistoryEntry {
   prize: number;
   claimed: boolean;
   last_played_at: string | null;
+  reward_type: string;
 }
 
 export const getTournamentHistory = async (
@@ -265,6 +279,7 @@ export const getTournamentHistory = async (
           prize: round2(t.prize),
           claimed: t.claimed,
           rank: t.rank,
+          reward_type: t.reward_type,
         });
       }
       return res.body.tournaments.map((t) => ({
@@ -281,6 +296,7 @@ export const getTournamentHistory = async (
         prize: round2(t.prize),
         claimed: t.claimed,
         last_played_at: t.last_played_at,
+        reward_type: t.reward_type,
       }));
     }
   }
@@ -309,6 +325,8 @@ export const getTournamentHistory = async (
       last_played_at: r.last_played_at
         ? new Date(r.last_played_at).toISOString()
         : null,
+      // Local cache mirror has no reward_type column (gamru outage fallback only).
+      reward_type: "bonus_cash",
     };
   });
 };
@@ -366,30 +384,32 @@ export const recordScore = async (
 /**
  * Claim a settled tournament prize. GAMRU grants it into its reward ledger
  * (idempotent — a second claim is rejected there with 409, so this throws
- * before crediting), and we credit the prize to the player's LOCAL games wallet
- * here. GAMRU's ledger and the games wallet are separate stores, so this is the
- * one place the cash actually lands in the player's wallet.
+ * before crediting), and we credit the prize to the player's LOCAL games
+ * wallet here. GAMRU's ledger and the games wallet are separate stores, so
+ * this is the one place the cash actually lands in the player's wallet.
+ *
+ * Credits real_money/bonus_money (whichever the tournament's Reward Type
+ * says) via applyClaimedReward, same as missions/challenges/races/reward-shop
+ * — NOT a direct `wallet.balance` bump. balance is a derived invariant
+ * (`real_money + bonus_money`); writing to it directly (the previous
+ * behavior here) left it out of sync with the Real/Bonus Money breakdown the
+ * Deposit page shows, and got silently overwritten by the next unrelated
+ * wallet write (e.g. a deposit), which recomputes balance from those two
+ * columns and would have erased an un-tracked prize credit.
  */
 export const claimTournament = async (
   userId: string,
   email: string,
   tournamentId: string
-): Promise<{ prize: number; balance?: number }> => {
+): Promise<{ prize: number; balance?: number; reward_type: string }> => {
   const res = await gamru.integration.tournaments.claim(tournamentId, { email });
   if (!res.ok || !res.body) {
     throw new AppError(res.error || "Failed to claim prize", res.status ?? 502);
   }
   const prize = round2(res.body.prize);
 
-  // Credit the local wallet with the prize (GAMRU already accepted the claim,
-  // so this runs at most once per tournament for this player).
-  let balance: number | undefined;
-  if (prize > 0) {
-    const wallet = await WalletRepository.findOrCreateByUserId(userId);
-    wallet.balance = round2(Number(wallet.balance ?? 0) + prize);
-    await wallet.save();
-    balance = wallet.balance;
-  }
+  await applyClaimedReward(userId, res.body.applied, res.body.reward_game, "tournaments", tournamentId);
+  const wallet = await getWallet(userId);
 
   await syncTournamentToCache(userId, tournamentId, {
     claimed_at: new Date(),
@@ -397,5 +417,8 @@ export const claimTournament = async (
     prize_amount: prize,
     prize_awarded: true,
   });
-  return { prize, balance };
+  // The literal type gamru actually credited (post-normalization) — the single
+  // most authoritative source for what to show the player, since it's what was
+  // really applied rather than the tournament's static config.
+  return { prize, balance: wallet.balance, reward_type: res.body.applied.type };
 };

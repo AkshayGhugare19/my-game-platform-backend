@@ -342,6 +342,19 @@ export interface GamruUserProfileData {
  * callers must fall back safely.
  */
 /**
+ * What a gamru claim (mission/bundle/tournament/challenge/race) actually
+ * applied. gamru itself only ever credits `xp`/`tokens` directly (its own
+ * native currencies); every other type (`real_cash`/`bonus_cash`/
+ * `free_spins`/legacy labels) needs the games platform to credit its own
+ * wallet/free-spins ledger using this — see wallet.service.ts's
+ * applyClaimedReward().
+ */
+export interface GamruAppliedReward {
+  type: string;
+  amount: number;
+}
+
+/**
  * Optional per-play game metadata pushed alongside an XP delta. Gamru
  * uses it to aggregate the player's casino personalization view
  * (game category / provider mix and favorite games).
@@ -457,6 +470,10 @@ export interface GamruIntTournament {
   segment: string | null;
   tags: string[];
   state: "SCHEDULED" | "IN_PROGRESS" | "ENDED";
+  /** What a winner's Prize Pool share actually is, credited on claim (defaults to "bonus_cash"). */
+  reward_type: string;
+  /** Only meaningful when reward_type is "free_spins" — which game the spins apply to. */
+  reward_game: string | null;
 }
 
 export interface GamruIntLeaderboardEntry {
@@ -468,6 +485,8 @@ export interface GamruIntLeaderboardEntry {
   prize: number;
   /** Whether this player already claimed their prize (server-authoritative). */
   claimed: boolean;
+  /** The tournament's/race's configured reward type (e.g. "bonus_cash", "free_spins") — same for every row. */
+  reward_type: string;
 }
 
 export interface GamruIntTournamentProgress {
@@ -494,6 +513,7 @@ export interface GamruIntTournamentHistory {
   prize: number;
   claimed: boolean;
   last_played_at: string | null;
+  reward_type: string;
 }
 
 /**
@@ -539,6 +559,10 @@ export interface GamruIntRace {
   description?: string | null;
   status?: string;
   state?: "SCHEDULED" | "IN_PROGRESS" | "ENDED" | string;
+  /** What a winner's prize share actually is, credited on claim (defaults to "bonus_cash"). */
+  reward_type?: string;
+  /** Only meaningful when reward_type is "free_spins" — which game the spins apply to. */
+  reward_game?: string | null;
   [key: string]: unknown;
 }
 
@@ -1119,9 +1143,12 @@ export const gamru = {
           })
         ),
       claim: (id: string, data: { email: string; bundleId?: string | null }) =>
-        unwrap<{ reward_label: string; mission: GamruIntMission }>(
-          post(`/missions/${id}/claim`, data)
-        ),
+        unwrap<{
+          reward_label: string;
+          mission: GamruIntMission;
+          applied: GamruAppliedReward;
+          reward_game: string | null;
+        }>(post(`/missions/${id}/claim`, data)),
     },
     missionBundles: {
       list: (email: string) =>
@@ -1174,7 +1201,12 @@ export const gamru = {
           )
         ),
       claim: (bundleId: string, missionId: string, data: { email: string }) =>
-        unwrap<{ reward_label: string; mission: GamruIntMission }>(
+        unwrap<{
+          reward_label: string;
+          mission: GamruIntMission;
+          applied: GamruAppliedReward;
+          reward_game: string | null;
+        }>(
           post(
             `/mission-bundles/${bundleId}/missions/${missionId}/claim`,
             data
@@ -1214,7 +1246,9 @@ export const gamru = {
           post(`/tournaments/${id}/score`, data)
         ),
       claim: (id: string, data: { email: string }) =>
-        unwrap<{ prize: number }>(post(`/tournaments/${id}/claim`, data)),
+        unwrap<{ prize: number; applied: GamruAppliedReward; reward_game: string | null }>(
+          post(`/tournaments/${id}/claim`, data)
+        ),
     },
     /**
      * Challenges — sibling to `missions`, same clientAuth + email-keyed
@@ -1244,8 +1278,12 @@ export const gamru = {
           get(`/challenges/${id}/progress`, { email })
         ),
       claim: (id: string, email: string) =>
-        unwrap<{ reward_label: string; challenge: GamruIntChallenge }>(
-          post(`/challenges/${id}/claim`, { email })
+        unwrap<{
+          reward_label: string;
+          challenge: GamruIntChallenge;
+          applied: GamruAppliedReward;
+          reward_game: string | null;
+        }>(post(`/challenges/${id}/claim`, { email })
         ),
     },
     /**
@@ -1278,7 +1316,9 @@ export const gamru = {
           post(`/races/${id}/score`, data)
         ),
       claim: (id: string, email: string) =>
-        unwrap<{ prize: number }>(post(`/races/${id}/claim`, { email })),
+        unwrap<{ prize: number; applied: GamruAppliedReward; reward_game: string | null }>(
+          post(`/races/${id}/claim`, { email })
+        ),
     },
     users: {
       missions: (userId: string, email: string) =>
@@ -1292,10 +1332,10 @@ export const gamru = {
     },
     /**
      * Forward a gameplay / login event so GAMRU advances progress. The
-     * `currency`/`isBonus`/`multiplier`/`provider`/`roundId`/`challengeId`/
-     * `raceId` fields are optional and purely additive — forwarded to gamru
-     * only when the caller supplies them; existing callers (mission/
-     * tournament engines) are unaffected.
+     * `currency`/`isBonus`/`multiplier`/`provider`/`category`/`roundId`/
+     * `challengeId`/`raceId` fields are optional and purely additive —
+     * forwarded to gamru only when the caller supplies them; existing
+     * callers (mission/tournament engines) are unaffected.
      */
     activity: (data: {
       email: string;
@@ -1313,6 +1353,7 @@ export const gamru = {
       isBonus?: boolean;
       multiplier?: number;
       provider?: string;
+      category?: string;
       roundId?: string;
       challengeId?: string;
       raceId?: string;

@@ -18,6 +18,7 @@ export const recordActivitySchema = Joi.object({
   isBonus: Joi.boolean().optional(),
   multiplier: Joi.number().optional(),
   provider: Joi.string().optional(),
+  category: Joi.string().optional(),
   roundId: Joi.string().optional(),
   challengeId: Joi.string().optional(),
   raceId: Joi.string().optional(),

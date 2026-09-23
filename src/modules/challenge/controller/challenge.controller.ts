@@ -87,7 +87,7 @@ export const claim = async (
   res: Response
 ): Promise<void> => {
   try {
-    const data = await claimChallenge(req.user!.email, req.params.id);
+    const data = await claimChallenge(req.user!.id, req.user!.email, req.params.id);
     successResponse(res, 200, "Challenge reward claimed", data);
   } catch (e) {
     if (e instanceof AppError) errorResponse(res, e.statusCode, e.message);

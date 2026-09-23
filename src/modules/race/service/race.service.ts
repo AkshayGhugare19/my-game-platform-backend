@@ -14,6 +14,7 @@ import gamru, {
   type GamruIntRaceProgress,
   type GamruIntLeaderboardEntry,
 } from "../../../utils/gamruService.ts";
+import { applyClaimedReward } from "../../wallet/service/wallet.service.ts";
 
 export type RaceDTO = GamruIntRace;
 
@@ -108,9 +109,10 @@ export const recordRaceScore = async (
 };
 
 export const claimRace = async (
+  userId: string,
   email: string,
   raceId: string
-): Promise<{ prize: number }> => {
+): Promise<{ prize: number; reward_type: string }> => {
   const res = await gamru.integration.races.claim(raceId, email);
   if (!res.ok || !res.body) {
     throw new AppError(
@@ -118,5 +120,13 @@ export const claimRace = async (
       res.status ?? 502
     );
   }
-  return res.body;
+
+  // gamru's own claim only ever credits xp/tokens directly; everything else
+  // (real_cash/bonus_cash/free_spins) needs crediting to THIS platform's
+  // wallet/free-spins ledger — see wallet.service.ts's applyClaimedReward.
+  await applyClaimedReward(userId, res.body.applied, res.body.reward_game, "races", raceId);
+
+  // The literal type gamru actually credited (post-normalization) — the single
+  // most authoritative source for what to show the player.
+  return { prize: res.body.prize, reward_type: res.body.applied.type };
 };

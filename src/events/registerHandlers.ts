@@ -71,6 +71,7 @@ export const registerEventHandlers = (): void => {
     const multiplier =
       typeof m.multiplier === "number" ? m.multiplier : undefined;
     const provider = typeof m.provider === "string" ? m.provider : undefined;
+    const category = typeof m.category === "string" ? m.category : undefined;
     const roundId = typeof m.roundId === "string" ? m.roundId : undefined;
     const challengeId =
       typeof m.challengeId === "string" ? m.challengeId : undefined;
@@ -86,6 +87,7 @@ export const registerEventHandlers = (): void => {
         isBonus,
         multiplier,
         provider,
+        category,
         roundId,
         challengeId,
         raceId,

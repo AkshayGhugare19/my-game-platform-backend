@@ -26,6 +26,7 @@ import UserMission, {
 } from "../model/user-mission.model.ts";
 import UserMissionRepository from "../model/user-mission.repository.ts";
 import UserRepository from "../../user/model/user.repository.ts";
+import { applyClaimedReward } from "../../wallet/service/wallet.service.ts";
 
 /** gamru missions are lifetime/special — one participation row per track. */
 const PERIOD = "GAMRU";
@@ -430,6 +431,18 @@ export const claimMission = async (
   }
   const periodKey = bundleId ? bundlePeriodKey(bundleId) : PERIOD;
   await syncMissionToCache(userId, res.body.mission, periodKey);
+
+  // gamru's own claim only ever credits xp/tokens directly; everything else
+  // (real_cash/bonus_cash/free_spins) needs crediting to THIS platform's
+  // wallet/free-spins ledger — see wallet.service.ts's applyClaimedReward.
+  await applyClaimedReward(
+    userId,
+    res.body.applied,
+    res.body.reward_game,
+    bundleId ? "mission-bundles" : "missions",
+    bundleId ? `${bundleId}:${missionId}` : missionId
+  );
+
   return { reward_label: res.body.reward_label };
 };
 
@@ -450,6 +463,7 @@ export interface PlaySignal {
   isBonus?: boolean;
   multiplier?: number;
   provider?: string;
+  category?: string;
   roundId?: string;
   challengeId?: string;
   raceId?: string;
@@ -482,6 +496,7 @@ export const advanceForActivity = async (
       ? { multiplier: signal.multiplier }
       : {}),
     ...(signal.provider !== undefined ? { provider: signal.provider } : {}),
+    ...(signal.category !== undefined ? { category: signal.category } : {}),
     ...(signal.roundId !== undefined ? { roundId: signal.roundId } : {}),
     ...(signal.challengeId !== undefined
       ? { challengeId: signal.challengeId }

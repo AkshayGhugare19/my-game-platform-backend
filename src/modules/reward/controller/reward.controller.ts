@@ -6,20 +6,13 @@ import RewardRepository from "../model/reward.repository.ts";
 import UserRewardRepository from "../model/user-reward.repository.ts";
 import { claimReward as claimLocalReward } from "../service/reward.engine.ts";
 import UserRepository from "../../user/model/user.repository.ts";
-import WalletRepository from "../../wallet/model/wallet.repository.ts";
+import { applyClaimedReward, getWallet } from "../../wallet/service/wallet.service.ts";
 import { gamru, gamruUserProfileData } from "../../../utils/gamruService.ts";
 import { readPageParams, paginateArray } from "../../../utils/pagination.ts";
 import {
   listUserBonusRows,
   pendingBonusCount,
 } from "../../bonus/service/bonus.engine.ts";
-
-/** Trailing number in a reward label, e.g. "Weekend Race prize — 500" → 500. */
-const parseTrailingAmount = (label?: string | null): number => {
-  if (!label) return 0;
-  const m = String(label).match(/(-?\d+(?:\.\d+)?)\s*$/);
-  return m ? Number(m[1]) : 0;
-};
 
 interface GamruRewardRow {
   id?: string;
@@ -31,6 +24,13 @@ interface GamruRewardRow {
   is_manual?: boolean;
   created_at?: string;
   [k: string]: unknown;
+}
+
+interface GamruClaimRewardData {
+  reward?: GamruRewardRow;
+  player?: unknown;
+  applied?: { type: string; amount: number };
+  reward_game?: string | null;
 }
 
 export const getMyRewards = async (
@@ -110,29 +110,26 @@ export const claim = async (
         return;
       }
       const body = result.body as { data?: unknown; message?: string } | undefined;
-      // A tournament-prize reward credits the local games wallet (GAMRU's ledger
-      // and the games wallet are separate stores). GAMRU only lets the claim
-      // succeed on the IN_PROGRESS→GRANTED transition, so this runs at most once.
-      const data = body?.data as
-        | { reward?: GamruRewardRow; player?: unknown }
-        | undefined;
-      const claimedReward = data?.reward;
+      const data = body?.data as GamruClaimRewardData | undefined;
+      // gamru's own claim only ever credits xp/tokens directly; everything
+      // else (real_cash/bonus_cash/free_spins) needs crediting to THIS
+      // platform's wallet/free-spins ledger. Unlike the feature-specific
+      // claim paths (missions/tournaments/challenges/races pages), this is
+      // the GENERIC "Rewards" page claim button — it only has the reward id,
+      // so it relies on gamru's claimRewardService resolving `applied` /
+      // `reward_game` generically (via the reward's own source_entity_id)
+      // rather than a feature-specific lookup.
       let balance: number | undefined;
-      if (claimedReward?.gamification_source === "tournaments") {
-        const amount = parseTrailingAmount(claimedReward.reward);
-        if (amount > 0) {
-          const wallet = await WalletRepository.findOrCreateByUserId(req.user!.id);
-          // A tournament prize is Real Money — credit RM and keep the
-          // invariant balance = real_money + bonus_money.
-          wallet.real_money =
-            Math.round((Number(wallet.real_money ?? 0) + amount) * 100) / 100;
-          wallet.balance =
-            Math.round(
-              (Number(wallet.real_money ?? 0) + Number(wallet.bonus_money ?? 0)) *
-                100
-            ) / 100;
-          await wallet.save();
-          balance = wallet.balance;
+      if (data?.applied) {
+        await applyClaimedReward(
+          req.user!.id,
+          data.applied,
+          data.reward_game ?? null,
+          data.reward?.gamification_source ?? "manual",
+          data.reward?.id ?? req.params.id
+        );
+        if (data.applied.type === "real_cash" || data.applied.type === "bonus_cash") {
+          balance = (await getWallet(req.user!.id)).balance;
         }
       }
       successResponse(res, 200, body?.message || "Reward claimed", {
