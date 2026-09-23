@@ -10,6 +10,8 @@ import {
 } from "../../../utils/pagination.ts";
 import RewardPurchaseRepository from "../model/reward-purchase.repository.ts";
 import type RewardPurchase from "../model/reward-purchase.model.ts";
+import { creditWallet, creditFreeSpins } from "../../wallet/service/wallet.service.ts";
+import { logger } from "../../../utils/logger.ts";
 
 /* ────────────────────────────────────────────────────────────────────────
  * Types
@@ -17,6 +19,28 @@ import type RewardPurchase from "../model/reward-purchase.model.ts";
 
 export type ProductCategory = "product" | "booster";
 export type BoosterKind = "token" | "xp" | "level" | "mission" | "generic";
+/**
+ * What a purchase of this product actually grants, beyond the price debit.
+ * "tokens"/"xp" are Gamru-native currencies credited by gamru itself inside
+ * the same purchase transaction (see purchaseRewardShopService) — nothing
+ * local to do for those. "real_cash"/"bonus_cash"/"free_spins" only exist on
+ * the games platform, so buyProduct() below fulfills those locally.
+ */
+export type FulfillmentType =
+  | "tokens"
+  | "xp"
+  | "real_cash"
+  | "bonus_cash"
+  | "free_spins"
+  | null;
+
+export interface FulfillmentMeta {
+  type: Exclude<FulfillmentType, null>;
+  /** Amount per unit — cash amount, spin count, tokens, or XP. */
+  amount: number;
+  /** free_spins only: which game the spins apply to. */
+  gameKey: string | null;
+}
 
 export interface BoosterMeta {
   multiplier: number;
@@ -29,7 +53,10 @@ export interface RewardProduct {
   name: string;
   description: string | null;
   image: string | null;
+  /** Price amount, in whichever balance priceCurrency names. */
   tokenPrice: number;
+  /** Which balance tokenPrice is charged against. */
+  priceCurrency: "tokens" | "xp";
   realPrice: number | null;
   currency: string;
   /** Functional class used for booster logic. */
@@ -43,6 +70,8 @@ export interface RewardProduct {
   booster: BoosterMeta | null;
   /** True when the player can afford one unit at the current balance. */
   affordable: boolean;
+  /** What actually gets credited/granted on a successful purchase, if configured. */
+  fulfillment: FulfillmentMeta | null;
 }
 
 export interface BoosterView {
@@ -160,6 +189,31 @@ const parseDuration = (
   return /hour|hr/i.test(m[2]) ? value * 60 : value;
 };
 
+const REWARD_TYPES = new Set(["tokens", "xp", "real_cash", "bonus_cash", "free_spins"]);
+/** Of REWARD_TYPES, the ones this service must actually credit — "tokens"/"xp" are already handled by gamru. */
+const LOCALLY_FULFILLED_TYPES = new Set(["real_cash", "bonus_cash", "free_spins"]);
+
+/**
+ * Read the admin-configured "what does this product actually grant" fields
+ * from the reward-shop product's data blob (reward_type/reward_value/
+ * reward_game — see gamru-frontend's rewardShop/steps.tsx). Absent/invalid
+ * config means this product has no reward wired up — the purchase still
+ * records the price spent + a ledger row, exactly as before this feature
+ * existed (e.g. boosters, vouchers, merchandise).
+ */
+const resolveFulfillment = (data: Record<string, unknown>): FulfillmentMeta | null => {
+  const type = String(data.reward_type ?? "").trim();
+  if (!REWARD_TYPES.has(type)) return null;
+  const amount = num(data.reward_value);
+  if (!amount || amount <= 0) return null;
+  const gameKey =
+    type === "free_spins" && typeof data.reward_game === "string" && data.reward_game
+      ? data.reward_game
+      : null;
+  if (type === "free_spins" && !gameKey) return null;
+  return { type: type as FulfillmentMeta["type"], amount, gameKey };
+};
+
 interface GamruRewardShopRow {
   id?: string;
   name?: string;
@@ -172,12 +226,14 @@ interface GamruRewardShopRow {
 
 const normalize = (
   row: GamruRewardShopRow,
-  tokenBalance: number
+  balances: { tokens: number; xp: number }
 ): RewardProduct => {
   const data = (row.data ?? {}) as Record<string, unknown>;
   const tags = Array.isArray(row.tags) ? row.tags : [];
   const name = row.name ?? "Untitled";
   const tokenPrice = num(data.token_price) ?? 0;
+  const priceCurrency: "tokens" | "xp" = data.price_currency === "xp" ? "xp" : "tokens";
+  const priceBalance = priceCurrency === "xp" ? balances.xp : balances.tokens;
   const category = resolveCategory(name, data, tags);
   const rawCategory =
     typeof data.category === "string" && data.category.trim()
@@ -203,6 +259,7 @@ const normalize = (
     description: row.description ?? null,
     image: absoluteImage(data.large_image) ?? absoluteImage(data.small_image),
     tokenPrice,
+    priceCurrency,
     realPrice: num(data.real_price),
     currency: String(data.currency ?? "USD"),
     category,
@@ -215,7 +272,8 @@ const normalize = (
         : num(data.stock_available ?? data.stock_total),
     type: typeof data.type === "string" ? data.type : null,
     booster,
-    affordable: tokenPrice > 0 && tokenBalance >= tokenPrice,
+    affordable: tokenPrice > 0 && priceBalance >= tokenPrice,
+    fulfillment: resolveFulfillment(data),
   };
 };
 
@@ -247,10 +305,11 @@ const toPurchaseView = (p: RewardPurchase): PurchaseView => ({
 interface GamruProfileSlice {
   playerId: string | null;
   tokens: number;
+  xp: number;
   catalog: GamruRewardShopRow[];
 }
 
-/** Pull the player's gamru profile once: id, live token balance, catalog. */
+/** Pull the player's gamru profile once: id, live token/XP balances, catalog. */
 const loadGamruSlice = async (email: string): Promise<GamruProfileSlice> => {
   const res = await gamruUserProfileData(email);
   if (!res.ok || !res.body) {
@@ -266,6 +325,7 @@ const loadGamruSlice = async (email: string): Promise<GamruProfileSlice> => {
   return {
     playerId: body.id ?? null,
     tokens: Number(body.tokens ?? 0),
+    xp: Number(body.xp_points ?? 0),
     catalog,
   };
 };
@@ -279,8 +339,10 @@ export const getProducts = async (
   page = 1,
   limit = 12
 ): Promise<RewardShopCatalog> => {
-  const { tokens, catalog } = await loadGamruSlice(email);
-  const products = catalog.filter((r) => r.id).map((r) => normalize(r, tokens));
+  const { tokens, xp, catalog } = await loadGamruSlice(email);
+  const products = catalog
+    .filter((r) => r.id)
+    .map((r) => normalize(r, { tokens, xp }));
   return { tokens, ...paginateArray(products, page, limit) };
 };
 
@@ -290,6 +352,10 @@ export interface BuyResult {
   boosterActivated: boolean;
   /** Null only if the local history mirror failed after a successful charge. */
   purchase: PurchaseView | null;
+  /** What this product is configured to grant beyond tokens, if anything. */
+  fulfillmentType: Exclude<FulfillmentType, null> | null;
+  /** True once the configured reward (cash/bonus/free spins) was actually credited. */
+  fulfillmentApplied: boolean;
 }
 
 export const buyProduct = async (
@@ -299,20 +365,26 @@ export const buyProduct = async (
   quantity = 1
 ): Promise<BuyResult> => {
   const qty = Math.max(1, Math.min(99, Math.floor(Number(quantity) || 1)));
-  const { playerId, tokens, catalog } = await loadGamruSlice(email);
+  const { playerId, tokens, xp, catalog } = await loadGamruSlice(email);
 
   if (!playerId) throw new AppError("Player profile not found in gamru", 404);
 
   const raw = catalog.find((r) => String(r.id) === String(productId));
   if (!raw) throw new AppError("Product not found", 404);
 
-  const product = normalize(raw, tokens);
+  const product = normalize(raw, { tokens, xp });
   if (product.tokenPrice <= 0) {
-    throw new AppError("This product cannot be bought with tokens", 400);
+    throw new AppError("This product does not have a valid price configured", 400);
   }
   const cost = product.tokenPrice * qty;
-  if (tokens < cost) {
-    throw new AppError("You don't have enough tokens for this purchase", 400);
+  // Fast local check before hitting gamru — gamru re-validates the real
+  // balance authoritatively inside its own purchase transaction regardless.
+  const priceBalance = product.priceCurrency === "xp" ? xp : tokens;
+  if (priceBalance < cost) {
+    throw new AppError(
+      `You don't have enough ${product.priceCurrency === "xp" ? "XP" : "tokens"} for this purchase`,
+      400
+    );
   }
 
   // Source of truth: gamru deducts the tokens, decrements stock and records
@@ -367,11 +439,45 @@ export const buyProduct = async (
     console.error("Failed to record local reward purchase:", err);
   }
 
+  // Actually deliver what the admin configured this product to grant.
+  // "tokens"/"xp" were already credited by gamru itself (same transaction as
+  // the price debit) — nothing to do here. Only the games-platform-only
+  // types need local action. Same "price is already spent, never fail the
+  // purchase over this" rule as the history mirror above — log and report
+  // unfulfilled rather than throw.
+  let fulfillmentApplied = false;
+  if (product.fulfillment && LOCALLY_FULFILLED_TYPES.has(product.fulfillment.type)) {
+    const { type, amount, gameKey } = product.fulfillment;
+    try {
+      if (type === "real_cash") {
+        await creditWallet(userId, amount * qty, "real_money");
+      } else if (type === "bonus_cash") {
+        await creditWallet(userId, amount * qty, "bonus_money");
+      } else if (type === "free_spins" && gameKey) {
+        await creditFreeSpins(userId, gameKey, amount * qty, "reward-shop", productId);
+      }
+      fulfillmentApplied = true;
+    } catch (err) {
+      logger.warn("Reward-shop fulfillment failed after a successful purchase", {
+        userId,
+        productId,
+        fulfillmentType: type,
+        error: (err as Error).message,
+      });
+    }
+  } else if (product.fulfillment) {
+    // "tokens"/"xp" — gamru already credited these atomically with the price
+    // debit (see purchaseRewardShopService), so there's nothing left to do.
+    fulfillmentApplied = true;
+  }
+
   return {
     tokensRemaining,
     tokensSpent,
     boosterActivated: isBooster,
     purchase: purchaseView,
+    fulfillmentType: product.fulfillment?.type ?? null,
+    fulfillmentApplied,
   };
 };
 
@@ -425,13 +531,15 @@ export const getHistory = async (
   if (!res.ok || !res.body) {
     throw new AppError("Shop history is temporarily unavailable", 503);
   }
-  const tokens = Number(res.body.tokens ?? 0);
+  // Only used to look up a purchased product's image/category/tier by name
+  // below — affordability isn't rendered here, so the balances don't matter.
+  const balances = { tokens: Number(res.body.tokens ?? 0), xp: Number(res.body.xp_points ?? 0) };
 
   const rawCatalog = (res.body.gamification?.reward_shop ??
     []) as GamruRewardShopRow[];
   const byName = new Map<string, RewardProduct>();
   rawCatalog.forEach((r) => {
-    if (r.name) byName.set(r.name.trim().toLowerCase(), normalize(r, tokens));
+    if (r.name) byName.set(r.name.trim().toLowerCase(), normalize(r, balances));
   });
 
   const rewards = (res.body.gamification?.rewards ?? []) as GamruRewardRow[];
@@ -485,14 +593,16 @@ export const getBoosters = async (
   if (!res.ok || !res.body) {
     throw new AppError("Boosters are temporarily unavailable", 503);
   }
-  const tokens = Number(res.body.tokens ?? 0);
+  // Only used to look up a purchased booster's image/multiplier/kind by name
+  // below — affordability isn't rendered here, so the balances don't matter.
+  const balances = { tokens: Number(res.body.tokens ?? 0), xp: Number(res.body.xp_points ?? 0) };
 
   const rawCatalog = (res.body.gamification?.reward_shop ??
     []) as GamruRewardShopRow[];
   const boosterByName = new Map<string, RewardProduct>();
   rawCatalog.forEach((r) => {
     if (!r.name) return;
-    const p = normalize(r, tokens);
+    const p = normalize(r, balances);
     if (p.category === "booster") {
       boosterByName.set(r.name.trim().toLowerCase(), p);
     }
